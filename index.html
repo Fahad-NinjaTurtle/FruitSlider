@@ -1,12 +1,51 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Fruit Slicer</title>
-</head>
-<body>
-    <!-- <script src="https://cdn.jsdelivr.net/npm/phaser@3.90.0/dist/phaser.min.js"></script> -->
-     <script src="main.js" type="module"></script>
-</body>
+
+    <style>
+      body {
+        margin: 0;
+        padding: 0;
+        overflow: hidden;
+      }
+
+      #startPanel {
+        position: absolute;
+        height: 100%;
+        width: 100%;
+        /* background-color: black; */
+        z-index: 1000;
+      }
+
+      #startBtn {
+        position: absolute;
+        padding: 10px 20px;
+        font-size: 30px;
+        cursor: pointer;
+        border-radius: 20px;
+        position: absolute;
+        top: 85%;
+        left: 50%;
+        height: 100px;
+        width: 200px;
+        transform: translate(-50%, -50%);
+        z-index: 1100;
+      }
+      #startBtn:hover {
+        background-color: #caeea1;
+      }
+
+    </style>
+  </head>
+  <body>
+    <script src="https://cdn.jsdelivr.net/npm/phaser@3/dist/phaser.js"></script>
+    <script type="module" src="main.js"></script>
+    <script type="module" src="scripts/InputListners.js"></script>
+
+    <img id="startPanel" src="sprites/mainImage.webp" alt="background">
+      <button id="startBtn">Start Game</button>
+  </body>
 </html>
