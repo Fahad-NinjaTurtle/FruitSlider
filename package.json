@@ -1,0 +1,22 @@
+{
+  "name": "html-5-week-6",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Fahad-NinjaTurtle/FruitSlider.git"
+  },
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/Fahad-NinjaTurtle/FruitSlider/issues"
+  },
+  "homepage": "https://github.com/Fahad-NinjaTurtle/FruitSlider#readme",
+  "dependencies": {
+    "phaser": "^3.90.0"
+  }
+}
