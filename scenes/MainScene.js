@@ -9,6 +9,7 @@ export class MainScene extends Phaser.Scene {
     this.load.image("pear", "sprites/pear.png");
     this.load.image("bomb", "sprites/bomb.png");
     this.load.image("background", "sprites/background.png");
+    this.load.image("trail", "sprites/Trail.png");
   }
 
   create() {
@@ -68,7 +69,7 @@ export class MainScene extends Phaser.Scene {
       if (!this.isSwiping) return;
 
       const now = this.time.now;
-      
+
       this.swipePoints.push({
         x: p.x,
         y: p.y,
@@ -79,10 +80,10 @@ export class MainScene extends Phaser.Scene {
       const cutoff = now - 50;
       this.swipePoints = this.swipePoints.filter((pt) => pt.time > cutoff);
     });
-    
+
     this.input.on("pointerup", () => {
       const now = this.time.now;
-      const cutoff = now - 50;
+      const cutoff = now - 1;
       this.swipePoints = this.swipePoints.filter((pt) => pt.time > cutoff);
       this.isSwiping = false;
     });
@@ -127,37 +128,102 @@ export class MainScene extends Phaser.Scene {
   checkSwipeAgainstFruits() {
     const points = this.swipePoints;
 
-    this.fruits.getChildren().forEach((fruit) => {
-      if (!fruit.active) return;
+    if (points.length < 2) {
+      console.log("⚠️ Not enough swipe points for collision check");
+      return;
+    }
+
+    // console.log(`\n🔍 Checking ${this.fruits.getChildren().length} fruits against ${points.length} swipe points`);
+
+    this.fruits.getChildren().forEach((fruit, fruitIndex) => {
+      if (!fruit.active) {
+        console.log(
+          `  Fruit ${fruitIndex} (${fruit.texture.key}): inactive, skipping`
+        );
+        return;
+      }
 
       const r = fruit.displayWidth * 0.45; // radius
       const cx = fruit.x;
       const cy = fruit.y;
+      const hitRadius = fruit.displayWidth * 0.35; // smaller radius → deeper swipe required
+
+      // console.log(`\n  🍎 Checking Fruit ${fruitIndex}: ${fruit.texture.key}`);
+      // console.log(`     Position: (${cx.toFixed(1)}, ${cy.toFixed(1)})`);
+      // console.log(`     Display Size: ${fruit.displayWidth.toFixed(1)} x ${fruit.displayHeight.toFixed(1)}`);
+      // console.log(`     Detection Radius: ${hitRadius.toFixed(1)}`);
 
       // Check each swipe segment
+      let hitFound = false;
       for (let i = 0; i < points.length - 1; i++) {
         const p1 = points[i];
         const p2 = points[i + 1];
-        const hitRadius = fruit.displayWidth * 0.35; // smaller radius → deeper swipe required
+        const segmentDistance = Phaser.Math.Distance.Between(
+          p1.x,
+          p1.y,
+          p2.x,
+          p2.y
+        );
+        const distanceToFruit = Phaser.Math.Distance.Between(
+          cx,
+          cy,
+          (p1.x + p2.x) / 2,
+          (p1.y + p2.y) / 2
+        );
 
-        if (
-          this.lineCircleIntersect(p1.x, p1.y, p2.x, p2.y, cx, cy, hitRadius)
-        ) {
-          console.log("FULL SWIPE HIT →", fruit.texture.key);
+        const intersects = this.lineCircleIntersect(
+          p1.x,
+          p1.y,
+          p2.x,
+          p2.y,
+          cx,
+          cy,
+          hitRadius
+        );
 
-          // Optional: show name on screen
-          // this.showFruitName(fruit.texture.key, fruit.x, fruit.y);
-
-          // fruit.destroy();
+        if (intersects) {
+          console.log(`     ✅ SEGMENT ${i} HIT!`);
+          console.log(
+            `        Segment: (${p1.x.toFixed(1)}, ${p1.y.toFixed(
+              1
+            )}) → (${p2.x.toFixed(1)}, ${p2.y.toFixed(1)})`
+          );
+          console.log(`        Segment Length: ${segmentDistance.toFixed(1)}`);
+          console.log(
+            `        Distance to Fruit Center: ${distanceToFruit.toFixed(1)}`
+          );
+          console.log(`        Hit Radius: ${hitRadius.toFixed(1)}`);
+          console.log(
+            `\n🎯 FULL SWIPE HIT → SLICING ${fruit.texture.key.toUpperCase()}!`
+          );
           this.sliceFruit(fruit);
-
+          hitFound = true;
           break;
+        } else {
+          // console.log(`     ❌ Segment ${i}: No hit (dist: ${distanceToFruit.toFixed(1)}, radius: ${hitRadius.toFixed(1)})`);
         }
+      }
+
+      if (!hitFound) {
+        // console.log(`     ℹ️ No collision detected for ${fruit.texture.key}`);
       }
     });
   }
 
   sliceFruit(fruit) {
+    console.log("=== SLICE FRUIT CALLED ===");
+    console.log("Fruit Type:", fruit.texture.key);
+    console.log("Fruit Position:", { x: fruit.x, y: fruit.y });
+    console.log("Fruit Scale:", fruit.scaleX);
+    console.log(
+      "Fruit Rotation:",
+      fruit.rotation,
+      "radians (",
+      Phaser.Math.RadToDeg(fruit.rotation),
+      "degrees)"
+    );
+    console.log("Fruit Size:", { width: fruit.width, height: fruit.height });
+
     const key = fruit.texture.key;
     const x = fruit.x;
     const y = fruit.y;
@@ -165,68 +231,193 @@ export class MainScene extends Phaser.Scene {
 
     // Calculate slice angle from swipe
     let sliceAngle = 0;
+    console.log("Swipe Points Count:", this.swipePoints.length);
+
     if (this.swipePoints.length >= 2) {
       const start = this.swipePoints[0];
       const end = this.swipePoints[this.swipePoints.length - 1];
       sliceAngle = Phaser.Math.Angle.Between(start.x, start.y, end.x, end.y);
+
+      console.log("Swipe Start:", { x: start.x, y: start.y });
+      console.log("Swipe End:", { x: end.x, y: end.y });
+      console.log(
+        "Slice Angle:",
+        sliceAngle,
+        "radians (",
+        Phaser.Math.RadToDeg(sliceAngle),
+        "degrees)"
+      );
+      console.log(
+        "Swipe Distance:",
+        Phaser.Math.Distance.Between(start.x, start.y, end.x, end.y)
+      );
+    } else {
+      console.warn("⚠️ Not enough swipe points! Using default angle 0");
     }
 
     // Get texture reference
     const tex = fruit.texture;
     const texW = tex.source[0].width;
     const texH = tex.source[0].height;
+    console.log("Texture Dimensions:", { width: texW, height: texH });
 
     // ---------- CREATE TOP HALF ----------
+    console.log("--- Creating Top Half ---");
     const top = this.add.image(x, y, key);
     top.setScale(scale);
     top.setCrop(0, 0, texW, texH / 2);
     top.setOrigin(0.5, 1); // cut-line origin
+    top.setRotation(fruit.rotation);
+    console.log("Top Half:", {
+      position: { x: top.x, y: top.y },
+      scale: top.scaleX,
+      rotation: top.rotation,
+      crop: { x: 0, y: 0, width: texW, height: texH / 2 },
+    });
     this.physics.world.enable(top);
 
     // ---------- CREATE BOTTOM HALF ----------
+    console.log("--- Creating Bottom Half ---");
     const bottom = this.add.image(x, y, key);
     bottom.setScale(scale);
     bottom.setCrop(0, texH / 2, texW, texH / 2);
+    bottom.setRotation(fruit.rotation);
     bottom.setOrigin(0.5, 0);
+    console.log("Bottom Half:", {
+      position: { x: bottom.x, y: bottom.y },
+      scale: bottom.scaleX,
+      rotation: bottom.rotation,
+      crop: { x: 0, y: texH / 2, width: texW, height: texH / 2 },
+    });
     this.physics.world.enable(bottom);
 
     // Remove original fruit
+    console.log("Destroying original fruit");
     fruit.destroy();
 
     // ---------- PHYSICS FORCE OUTWARD ----------
+    // Calculate separation direction based on which side of swipe line each half is on
     const force = 500;
     const perpAngle = sliceAngle + Math.PI / 2;
+    
+    // Calculate swipe line direction vector (normalized)
+    let swipeDirX = 0;
+    let swipeDirY = 0;
+    if (this.swipePoints.length >= 2) {
+      const start = this.swipePoints[0];
+      const end = this.swipePoints[this.swipePoints.length - 1];
+      const swipeLength = Phaser.Math.Distance.Between(start.x, start.y, end.x, end.y);
+      if (swipeLength > 0) {
+        swipeDirX = (end.x - start.x) / swipeLength;
+        swipeDirY = (end.y - start.y) / swipeLength;
+      }
+    }
+    
+    // Calculate perpendicular to swipe line (normalized)
+    const perpDirX = -swipeDirY; // Perpendicular: rotate 90 degrees
+    const perpDirY = swipeDirX;
+    
+    // Calculate center points of each half in world space (accounting for rotation)
+    // Top half center is at (0, -texH/4) in local texture space, bottom half at (0, texH/4)
+    // But we need to account for the crop and origin offset
+    const halfHeight = (texH / 2) * scale;
+    const cosRot = Math.cos(fruit.rotation);
+    const sinRot = Math.sin(fruit.rotation);
+    
+    // Top half: origin is at (0.5, 1.0) which is bottom-center of the cropped top half
+    // So the visual center is offset upward by halfHeight/2 in local space
+    // In local space: (0, -halfHeight/2) relative to origin
+    const topHalfLocalOffsetY = -halfHeight / 2;
+    
+    // Bottom half: origin is at (0.5, 0.0) which is top-center of the cropped bottom half
+    // So the visual center is offset downward by halfHeight/2 in local space
+    // In local space: (0, halfHeight/2) relative to origin
+    const bottomHalfLocalOffsetY = halfHeight / 2;
+    
+    // Transform local offsets to world space using rotation
+    // Rotate the offset vector by fruit rotation
+    const topHalfWorldX = x + (-sinRot * topHalfLocalOffsetY);
+    const topHalfWorldY = y + (cosRot * topHalfLocalOffsetY);
+    
+    const bottomHalfWorldX = x + (-sinRot * bottomHalfLocalOffsetY);
+    const bottomHalfWorldY = y + (cosRot * bottomHalfLocalOffsetY);
+    
+    // Determine which side of the swipe line each half is on
+    // Using cross product: if cross > 0, point is on left side of line
+    let swipeStartX = x;
+    let swipeStartY = y;
+    if (this.swipePoints.length >= 2) {
+      swipeStartX = this.swipePoints[0].x;
+      swipeStartY = this.swipePoints[0].y;
+    }
+    
+    // Vector from swipe start to top half center
+    const toTopX = topHalfWorldX - swipeStartX;
+    const toTopY = topHalfWorldY - swipeStartY;
+    const crossTop = swipeDirX * toTopY - swipeDirY * toTopX;
+    
+    // Vector from swipe start to bottom half center
+    const toBottomX = bottomHalfWorldX - swipeStartX;
+    const toBottomY = bottomHalfWorldY - swipeStartY;
+    const crossBottom = swipeDirX * toBottomY - swipeDirY * toBottomX;
+    
+    // Apply force: halves go in opposite directions perpendicular to swipe line
+    // The half on the "positive" side goes in positive perpendicular direction
+    const separationSign = crossTop > 0 ? 1 : -1;
+    
+    const topVelX = perpDirX * force * separationSign;
+    const topVelY = perpDirY * force * separationSign;
+    const bottomVelX = perpDirX * force * -separationSign;
+    const bottomVelY = perpDirY * force * -separationSign;
 
-    top.body.setVelocity(
-      Math.cos(perpAngle) * force,
-      Math.sin(perpAngle) * force
-    );
-    bottom.body.setVelocity(
-      -Math.cos(perpAngle) * force,
-      -Math.sin(perpAngle) * force
-    );
+    console.log("--- Physics Setup ---");
+    console.log("Separation Force:", force);
+    console.log("Swipe Direction:", { x: swipeDirX, y: swipeDirY });
+    console.log("Perpendicular Direction:", { x: perpDirX, y: perpDirY });
+    console.log("Top Half World Position:", { x: topHalfWorldX, y: topHalfWorldY });
+    console.log("Bottom Half World Position:", { x: bottomHalfWorldX, y: bottomHalfWorldY });
+    console.log("Cross Products:", { top: crossTop, bottom: crossBottom });
+    console.log("Separation Sign:", separationSign);
+    console.log("Top Half Velocity:", { x: topVelX, y: topVelY });
+    console.log("Bottom Half Velocity:", { x: bottomVelX, y: bottomVelY });
+
+    top.body.setVelocity(topVelX, topVelY);
+    bottom.body.setVelocity(bottomVelX, bottomVelY);
 
     top.body.setGravityY(1200);
     bottom.body.setGravityY(1200);
+    console.log("Gravity:", 1200);
 
-    top.body.setAngularVelocity(Phaser.Math.Between(80, 140));
-    bottom.body.setAngularVelocity(-Phaser.Math.Between(80, 140));
+    const topAngularVel = Phaser.Math.Between(80, 90);
+    const bottomAngularVel = -Phaser.Math.Between(80, 90);
+    top.body.setAngularVelocity(topAngularVel);
+    bottom.body.setAngularVelocity(bottomAngularVel);
+    console.log("Angular Velocity:", {
+      top: topAngularVel,
+      bottom: bottomAngularVel,
+    });
 
     // ---------- SLICE VISUAL EFFECT ----------
+    console.log("--- Creating Visual Effects ---");
     this.createSliceFlash(x, y, sliceAngle);
     this.createJuiceSplash(x, y, sliceAngle, key);
+    console.log("Visual effects created at:", { x, y, angle: sliceAngle });
 
     // Fade out pieces
+    console.log("--- Starting Fade Out Animation ---");
     this.tweens.add({
       targets: [top, bottom],
       alpha: 0,
       duration: 900,
       delay: 150,
       onComplete: () => {
+        console.log("Halves destroyed after fade");
         top.destroy();
         bottom.destroy();
       },
     });
+
+    console.log("=== SLICE FRUIT COMPLETE ===");
   }
   createSliceFlash(x, y, angle) {
     const line = this.add.graphics();
@@ -324,14 +515,22 @@ export class MainScene extends Phaser.Scene {
 
     if (points.length < 2) return;
 
-    this.trailGraphics.lineStyle(4, 0xffffff, 0.8);
+    // Draw outer glow (thicker, more transparent)
+    this.trailGraphics.lineStyle(8, 0xffffff, 0.3);
     this.trailGraphics.beginPath();
     this.trailGraphics.moveTo(points[0].x, points[0].y);
-
     for (let i = 1; i < points.length; i++) {
       this.trailGraphics.lineTo(points[i].x, points[i].y);
     }
+    this.trailGraphics.strokePath();
 
+    // Draw inner bright line
+    this.trailGraphics.lineStyle(4, 0xffffff, 0.9);
+    this.trailGraphics.beginPath();
+    this.trailGraphics.moveTo(points[0].x, points[0].y);
+    for (let i = 1; i < points.length; i++) {
+      this.trailGraphics.lineTo(points[i].x, points[i].y);
+    }
     this.trailGraphics.strokePath();
   }
 
