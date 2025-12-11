@@ -1,19 +1,63 @@
 import { MainScene } from "./scenes/MainScene.js";
 import { SliceTestScene } from "./scripts/SliceTestScene.js";
 
+// Detect if mobile device
+const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+
+// Get actual screen dimensions
+const screenWidth = window.innerWidth;
+const screenHeight = window.innerHeight;
+
+// Calculate responsive gravity based on screen height
+// Base gravity for 1080p, scales with screen height
+const baseHeight = 1080;
+const baseGravity = 300;
+const gravityScale = screenHeight / baseHeight;
+const responsiveGravity = baseGravity * gravityScale;
+
 const config = {
     type: Phaser.AUTO,
-    width: window.innerWidth    ,
-    height: window.innerHeight,
+    width: screenWidth,
+    height: screenHeight,
     backgroundColor: '#222',
     physics: {
         default: "arcade",
         arcade: {
-            gravity: { y: 300 },
+            gravity: { y: responsiveGravity },
             debug: false
         }
     },
-    scene: MainScene
+    plugins: {
+        global: [
+            {
+                key: 'RawgesturePlugin',
+                plugin: Phaser.Plugins.RawgesturePlugin,
+                start: true
+            }
+        ]
+    },
+    scene: MainScene,
+    scale: {
+        mode: Phaser.Scale.RESIZE,
+        autoCenter: Phaser.Scale.CENTER_BOTH,
+        width: '100%',
+        height: '100%'
+    }
 };
 
 const game = new Phaser.Game(config);
+
+// Handle window resize
+window.addEventListener('resize', () => {
+    game.scale.refresh();
+});
+
+// Lock orientation on mobile
+if (isMobile) {
+    // Try to lock orientation (may not work on all browsers)
+    if (screen.orientation && screen.orientation.lock) {
+        screen.orientation.lock('landscape').catch(err => {
+            console.log('Orientation lock failed:', err);
+        });
+    }
+}

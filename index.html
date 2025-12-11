@@ -2,50 +2,196 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <title>Fruit Slicer</title>
 
     <style>
-      body {
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      html, body {
+        width: 100%;
+        height: 100%;
         margin: 0;
         padding: 0;
         overflow: hidden;
+        position: fixed;
+        touch-action: none;
+        -webkit-touch-callout: none;
+        -webkit-user-select: none;
+        user-select: none;
       }
 
       #startPanel {
         position: absolute;
         height: 100%;
         width: 100%;
-        /* background-color: black; */
+        object-fit: cover;
         z-index: 1000;
       }
 
       #startBtn {
         position: absolute;
-        padding: 10px 20px;
-        font-size: 30px;
+        padding: clamp(12px, 2vh, 16px) clamp(24px, 5vw, 32px);
+        font-size: clamp(18px, 3.5vw, 28px);
         cursor: pointer;
-        border-radius: 20px;
-        position: absolute;
+        border-radius: clamp(15px, 3vw, 25px);
         top: 85%;
         left: 50%;
-        height: 100px;
-        width: 200px;
+        min-height: clamp(50px, 8vh, 80px);
+        min-width: clamp(140px, 35vw, 220px);
         transform: translate(-50%, -50%);
         z-index: 1100;
+        border: 3px solid rgba(255, 255, 255, 0.3);
+        background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
+        color: white;
+        font-weight: bold;
+        text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+        transition: all 0.2s ease;
+        font-family: Arial, sans-serif;
+        letter-spacing: 1px;
       }
+      
       #startBtn:hover {
-        background-color: #caeea1;
+        background: linear-gradient(135deg, #66BB6A 0%, #4CAF50 100%);
+        transform: translate(-50%, -50%) scale(1.05);
+        box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.3);
       }
 
+      #startBtn:active {
+        background: linear-gradient(135deg, #388E3C 0%, #2E7D32 100%);
+        transform: translate(-50%, -50%) scale(0.98);
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3), inset 0 2px 5px rgba(0, 0, 0, 0.2);
+      }
+
+      /* Mobile specific button styles */
+      @media (max-width: 768px) {
+        #startBtn {
+          padding: clamp(14px, 2.5vh, 18px) clamp(28px, 6vw, 36px);
+          font-size: clamp(20px, 4vw, 26px);
+          border-radius: clamp(18px, 4vw, 28px);
+          min-height: clamp(55px, 9vh, 85px);
+          min-width: clamp(160px, 40vw, 240px);
+          border-width: 2px;
+        }
+      }
+
+      /* Landscape orientation message for mobile */
+      #orientationMessage {
+        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(0, 0, 0, 0.9);
+        z-index: 2000;
+        justify-content: center;
+        align-items: center;
+        flex-direction: column;
+        color: white;
+        font-family: Arial, sans-serif;
+        text-align: center;
+        padding: 20px;
+      }
+
+      #orientationMessage.show {
+        display: flex;
+      }
+
+      #orientationMessage h2 {
+        font-size: clamp(24px, 5vw, 36px);
+        margin-bottom: 20px;
+      }
+
+      #orientationMessage p {
+        font-size: clamp(16px, 3vw, 24px);
+      }
+
+      #orientationIcon {
+        font-size: clamp(60px, 15vw, 100px);
+        margin-bottom: 20px;
+        animation: rotate 2s infinite;
+      }
+
+      @keyframes rotate {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(90deg); }
+      }
+
+      /* Responsive canvas */
+      canvas {
+        display: block;
+        width: 100% !important;
+        height: 100% !important;
+        object-fit: cover;
+      }
+
+      /* Hide on desktop */
+      @media (min-width: 768px) {
+        #orientationMessage {
+          display: none !important;
+        }
+      }
     </style>
   </head>
   <body>
+    <div id="orientationMessage">
+      <div id="orientationIcon">📱</div>
+      <h2>Please Rotate Your Device</h2>
+      <p>This game works best in landscape mode</p>
+    </div>
+
+    <img id="startPanel" src="sprites/mainImage.webp" alt="background">
+    <button id="startBtn">Start Game</button>
+
     <script src="https://cdn.jsdelivr.net/npm/phaser@3/dist/phaser.js"></script>
     <script type="module" src="main.js"></script>
     <script type="module" src="scripts/InputListners.js"></script>
 
-    <img id="startPanel" src="sprites/mainImage.webp" alt="background">
-      <button id="startBtn">Start Game</button>
+    <script>
+      // Check orientation and show message
+      function checkOrientation() {
+        const orientationMessage = document.getElementById('orientationMessage');
+        const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+        
+        if (isMobile) {
+          const isPortrait = window.innerHeight > window.innerWidth;
+          if (isPortrait) {
+            orientationMessage.classList.add('show');
+          } else {
+            orientationMessage.classList.remove('show');
+          }
+        }
+      }
+
+      // Check on load
+      checkOrientation();
+
+      // Check on orientation change
+      window.addEventListener('orientationchange', () => {
+        setTimeout(checkOrientation, 100);
+      });
+
+      // Check on resize
+      window.addEventListener('resize', checkOrientation);
+
+      // Prevent zoom on double tap
+      let lastTouchEnd = 0;
+      document.addEventListener('touchend', function (event) {
+        const now = (new Date()).getTime();
+        if (now - lastTouchEnd <= 300) {
+          event.preventDefault();
+        }
+        lastTouchEnd = now;
+      }, false);
+    </script>
   </body>
 </html>
