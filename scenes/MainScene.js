@@ -10,6 +10,7 @@ export class MainScene extends Phaser.Scene {
     this.load.image("bomb", "sprites/bomb.png");
     this.load.image("background", "sprites/background.png");
     this.load.image("trail", "sprites/Trail.png");
+    this.load.image("cross", "sprites/cross.png");
   }
 
   create() {
@@ -22,9 +23,13 @@ export class MainScene extends Phaser.Scene {
     this.centerX = width / 2;
 
     // Background - make sure it fills entire screen
-    const bg = this.add.image(0, 0, "background").setOrigin(0, 0);
-    bg.displayWidth = width;
-    bg.displayHeight = height;
+    this.bg = this.add.image(0, 0, "background").setOrigin(0, 0);
+    this.bg.displayWidth = width;
+    this.bg.displayHeight = height;
+    this.bg.setDepth(0); // Background at lowest depth
+    
+    // Store reference to update when fullscreen changes
+    this.updateBackgroundSize();
 
     // Responsive scale based on screen height
     // Base scale for 1080p, scales down for smaller screens
@@ -44,29 +49,132 @@ export class MainScene extends Phaser.Scene {
     this.fruitScale = Phaser.Math.Clamp(this.fruitScale, 0.15, 0.35);
 
     this.fruits = this.physics.add.group();
+    
+    // Group for juice splatters (stays on background, behind fruits)
+    this.juiceSplatters = this.add.group();
+    this.juiceSplatters.setDepth(1); // Behind fruits but above background
 
-    this.time.addEvent({
-      delay: 1200,
-      callback: () => {
-        const fruitType = ["waterMelon", "apple", "peach", "pear", "bomb"];
-        const randomFruit =
-          fruitType[Phaser.Math.Between(0, fruitType.length - 1)];
-        const randomSpawnX = Phaser.Math.Between(50, width - 50);
-        this.spawnFruit(randomFruit, randomSpawnX, width, height);
-      },
-      loop: true,
-    });
+    // Don't start fruit spawning yet - wait for start button
+    this.fruitSpawnTimer = null;
+    this.gameStarted = false;
+    
+    // Check if we're restarting from game over - auto-start if needed
+    // This ensures fruits spawn after retry
+    if (this.gameStarted === undefined) {
+      this.gameStarted = false;
+    }
     this.swipePoints = [];
     this.isSwiping = false;
+    this.trailFadeTimer = null;
+    this.trailClearTimer = null; // Timer to clear trail if no movement
+
+    // Game state
+    this.score = 0;
+    this.misses = 0;
+    this.maxMisses = 3;
+    this.gameOver = false;
+    
+    // Load best score from localStorage
+    this.bestScore = parseInt(localStorage.getItem('fruitNinjaBestScore') || '0', 10);
+
+    // UI Elements - Style matching the image
+    // Calculate responsive positions based on screen size
+    const baseWidth = 1920;
+    const baseHeightUI = 1080;
+    const uiScale = Math.min(width / baseWidth, height / baseHeightUI);
+    
+    // Top-left UI group
+    const topLeftX = 40;
+    const topLeftY = 40;
+    
+    // Yellow score box - no watermelon icon
+    const scoreBoxWidth = 100;
+    const scoreBoxHeight = 45;
+    const scoreBoxX = topLeftX + 50; // Positioned at left edge
+    const scoreBoxY = topLeftY;
+    
+    this.scoreBox = this.add.graphics();
+    this.scoreBox.fillStyle(0xffd700, 1); // Bright yellow
+    this.scoreBox.fillRoundedRect(scoreBoxX - scoreBoxWidth/2, scoreBoxY - scoreBoxHeight/2, scoreBoxWidth, scoreBoxHeight, 8);
+    this.scoreBox.lineStyle(2, 0x000000, 1); // Black border
+    this.scoreBox.strokeRoundedRect(scoreBoxX - scoreBoxWidth/2, scoreBoxY - scoreBoxHeight/2, scoreBoxWidth, scoreBoxHeight, 8);
+    this.scoreBox.setDepth(100);
+    
+    // Score text (inside yellow box) - larger and bold
+    this.scoreText = this.add.text(scoreBoxX, scoreBoxY, '0', {
+      fontSize: '32px',
+      fill: '#000000',
+      fontFamily: 'Arial',
+      fontStyle: 'bold'
+    }).setOrigin(0.5).setDepth(101);
+    
+    // BEST score text (below yellow box, aligned with left edge of box)
+    this.bestScoreText = this.add.text(scoreBoxX - scoreBoxWidth/2, scoreBoxY + scoreBoxHeight/2 + 8, `BEST: ${this.bestScore}`, {
+      fontSize: '20px',
+      fill: '#ff8c00',
+      fontFamily: 'Arial',
+      fontStyle: 'bold'
+    }).setOrigin(0, 0.5).setDepth(101);
+    
+    // Miss counter - Cross icons from sprite (top right)
+    this.missIcons = [];
+    const missIconSpacing = 80; // Increased spacing for larger crosses
+    const missIconStartX = width - 200; // Adjusted position for larger icons
+    const missIconY = topLeftY;
+    const missIconSize = 72; // Size of cross icon (2x larger)
+    
+    for (let i = 0; i < this.maxMisses; i++) {
+      const crossIcon = this.add.image(missIconStartX + i * missIconSpacing, missIconY, 'cross');
+      // Set scale to match the original blue circle size (36px diameter = 18px radius)
+      // Assuming cross.png is around 72x72, scale to ~36px
+      crossIcon.setDisplaySize(72, 72); // 2x size (was 36, now 72)
+      crossIcon.setDepth(100);
+      this.missIcons.push(crossIcon);
+    }
 
     this.input.on("pointerdown", (p) => {
+      // Don't process swipes if game is over
+      if (this.gameOver) return;
+      
       const now = this.time.now;
       this.swipePoints = [{ x: p.x, y: p.y, time: now }];
       this.isSwiping = true;
+      
+      // Clear any existing trail immediately
+      this.trailGraphics.clear();
+      
+      // Cancel any existing fade timer
+      if (this.trailFadeTimer) {
+        this.trailFadeTimer.remove();
+        this.trailFadeTimer = null;
+      }
+      
+      // Cancel any existing clear timer
+      if (this.trailClearTimer) {
+        this.trailClearTimer.remove();
+        this.trailClearTimer = null;
+      }
+      
+      // Set timer to clear trail if no movement after 200ms
+      this.trailClearTimer = this.time.delayedCall(200, () => {
+        if (this.swipePoints.length <= 1) {
+          // No movement detected, clear trail
+          this.trailGraphics.clear();
+          this.swipePoints = [];
+          this.isSwiping = false;
+        }
+        this.trailClearTimer = null;
+      });
     });
 
     this.input.on("pointermove", (p) => {
-      if (!this.isSwiping) return;
+      if (!this.isSwiping || this.gameOver) return;
+
+      // Cancel the clear timer since we're moving
+      if (this.trailClearTimer) {
+        this.trailClearTimer.remove();
+        this.trailClearTimer = null;
+      }
 
       const now = this.time.now;
 
@@ -82,14 +190,462 @@ export class MainScene extends Phaser.Scene {
     });
 
     this.input.on("pointerup", () => {
+      // Don't process if game is over (let buttons handle clicks)
+      if (this.gameOver) return;
+      
+      // Cancel clear timer
+      if (this.trailClearTimer) {
+        this.trailClearTimer.remove();
+        this.trailClearTimer = null;
+      }
+
       const now = this.time.now;
       const cutoff = now - 1;
       this.swipePoints = this.swipePoints.filter((pt) => pt.time > cutoff);
       this.isSwiping = false;
+      
+      // Fade out trail after 1 second
+      if (this.trailFadeTimer) {
+        this.trailFadeTimer.remove();
+      }
+      this.trailFadeTimer = this.time.delayedCall(1000, () => {
+        this.tweens.add({
+          targets: this.trailGraphics,
+          alpha: 0,
+          duration: 200,
+          onComplete: () => {
+            this.trailGraphics.clear();
+            this.trailGraphics.alpha = 1;
+            this.swipePoints = [];
+          }
+        });
+        this.trailFadeTimer = null;
+      });
     });
     this.trailGraphics = this.add.graphics({
       lineStyle: { width: 4, color: 0xffffff, alpha: 0.8 },
     });
+    
+    // Listen for fullscreen changes to update background
+    this.scale.on('resize', this.updateBackgroundSize, this);
+    
+    // Make startGame method accessible globally
+    window.startGame = () => this.startGame();
+    
+    // Check if this is a scene restart (retry) - auto-start game
+    // Store a flag in scene data to detect restart
+    if (!this.scene.settings.data) {
+      this.scene.settings.data = {};
+    }
+    
+    // If retry was clicked, auto-start the game
+    if (this.scene.settings.data.autoStart) {
+      this.time.delayedCall(200, () => {
+        this.startGame();
+      });
+      // Reset flag
+      this.scene.settings.data.autoStart = false;
+    }
+  }
+
+  // Method to start the game (called from start button)
+  startGame() {
+    if (this.gameStarted) return; // Already started
+    
+    this.gameStarted = true;
+    this.gameOver = false;
+    this.score = 0;
+    this.misses = 0;
+    
+    // Reload best score
+    this.bestScore = parseInt(localStorage.getItem('fruitNinjaBestScore') || '0', 10);
+    
+    this.updateUI();
+    
+    const width = this.cameras.main.width;
+    const height = this.cameras.main.height;
+    
+    // Start fruit spawning
+    this.fruitSpawnTimer = this.time.addEvent({
+      delay: 1200,
+      callback: () => {
+        if (this.gameOver) return; // Don't spawn if game is over
+        const fruitType = ["waterMelon", "apple", "peach", "pear", "bomb"];
+        const randomFruit =
+          fruitType[Phaser.Math.Between(0, fruitType.length - 1)];
+        const randomSpawnX = Phaser.Math.Between(50, width - 50);
+        this.spawnFruit(randomFruit, randomSpawnX, width, height);
+      },
+      loop: true,
+    });
+    
+    console.log('🎮 Game started - fruits will now spawn');
+  }
+
+  // Update UI text
+  updateUI() {
+    if (this.scoreText) {
+      this.scoreText.setText(`${this.score}`);
+    }
+    if (this.bestScoreText) {
+      this.bestScoreText.setText(`BEST: ${this.bestScore}`);
+    }
+    
+    // Update miss icons (show remaining lives - hide icons from left when misses occur)
+    if (this.missIcons) {
+      for (let i = 0; i < this.maxMisses; i++) {
+        if (this.missIcons[i]) {
+          // Show icon if it's not yet missed (remove from left side)
+          // If misses = 0, show all (i >= 0)
+          // If misses = 1, show last 2 (i >= 1) - hide leftmost
+          // If misses = 2, show last 1 (i >= 2) - hide leftmost 2
+          // If misses = 3, show none (i >= 3) - hide all
+          this.missIcons[i].setVisible(i >= this.misses);
+        }
+      }
+    }
+  }
+
+  // Create bomb explosion - full screen white flash (temporary blindness effect)
+  createBombExplosion(x, y) {
+    const width = this.cameras.main.width;
+    const height = this.cameras.main.height;
+    
+    // Create full screen white flash
+    const whiteFlash = this.add.graphics();
+    whiteFlash.fillStyle(0xffffff, 1); // Pure white
+    whiteFlash.fillRect(0, 0, width, height);
+    whiteFlash.setDepth(250); // Above everything
+    
+    // Flash appears instantly, then fades out over 1s
+    this.tweens.add({
+      targets: whiteFlash,
+      alpha: 0,
+      duration: 1500, // Fade out over 1000ms (1 second)
+      ease: 'Power2',
+      onComplete: () => {
+        whiteFlash.destroy();
+      }
+    });
+  }
+
+  // Show game over text (called after bomb explosion)
+  showGameOverText() {
+    const width = this.cameras.main.width;
+    const height = this.cameras.main.height;
+    
+    // GAME OVER text (large, red, bold)
+    const gameOverText = this.add.text(
+      width / 2,
+      height / 2,
+      'GAME OVER',
+      {
+        fontSize: '80px',
+        fill: '#ff0000',
+        stroke: '#000000',
+        strokeThickness: 8,
+        fontFamily: 'Arial',
+        fontStyle: 'bold'
+      }
+    ).setOrigin(0.5).setDepth(251);
+    
+    // Fade in animation
+    gameOverText.setAlpha(0);
+    this.tweens.add({
+      targets: gameOverText,
+      alpha: 1,
+      duration: 300,
+      ease: 'Power2'
+    });
+    
+    // Store reference for cleanup
+    this.gameOverTextObj = gameOverText;
+  }
+
+  // End game function with parchment-style panel
+  endGame(reason) {
+    // if (this.gameOver) {
+    //   console.log('⚠️ endGame called but game already over');
+    //   return; // Already ended
+    // }
+    
+    console.log('🎮 endGame called:', reason);
+    this.gameOver = true;
+    
+    // Use UI scale if available, otherwise default to 1
+    const uiScale = this.uiScale || 1;
+    
+    // Clear swipe trail immediately
+    this.isSwiping = false;
+    this.swipePoints = [];
+
+    if (this.trailFadeTimer) {
+      this.trailFadeTimer.remove();
+      this.trailFadeTimer = null;
+    }
+
+    if (this.trailClearTimer) {
+      this.trailClearTimer.remove();
+      this.trailClearTimer = null;
+    }
+
+    if (this.trailGraphics) {
+      this.trailGraphics.clear();
+      this.trailGraphics.alpha = 0;
+    }
+    
+    // Update best score
+    if (this.score > this.bestScore) {
+      this.bestScore = this.score;
+      localStorage.setItem('fruitNinjaBestScore', this.bestScore.toString());
+    }
+    
+    // Stop fruit spawning
+    if (this.fruitSpawnTimer) {
+      this.fruitSpawnTimer.remove();
+      this.fruitSpawnTimer = null;
+    }
+    
+    const width = this.cameras.main.width;
+    const height = this.cameras.main.height;
+    
+    // Remove game over text if it exists (from bomb explosion) - do it immediately
+    if (this.gameOverTextObj) {
+      this.gameOverTextObj.destroy();
+      this.gameOverTextObj = null;
+    }
+    
+    console.log('📋 Creating game over panel...');
+    
+    // Create dark overlay (above white flash if it exists)
+    const overlay = this.add.graphics();
+    overlay.fillStyle(0x000000, 0.7);
+    overlay.fillRect(0, 0, width, height);
+    overlay.setDepth(260); // Above white flash (250) and game over text (251)
+    
+    // Create parchment scroll background (responsive to screen size)
+    const isMobile =
+      /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
+        navigator.userAgent
+      );
+
+    // Panel scale based on height (mobile vs PC)
+    const panelBaseHeight = isMobile ? 720 : 900;
+    const panelScale = Phaser.Math.Clamp(height / panelBaseHeight, 0.7, 1.1);
+
+    const scrollWidth = Math.min(width * 0.8, 520 * panelScale);
+    const scrollHeight = Math.min(height * 0.55, 360 * panelScale);
+    const scrollX = width / 2;
+    const scrollY = height / 2 - 50;
+    
+    const scroll = this.add.graphics();
+    scroll.fillStyle(0xd4a574, 1); // Parchment color
+    scroll.fillRoundedRect(scrollX - scrollWidth/2, scrollY - scrollHeight/2, scrollWidth, scrollHeight, 10);
+    scroll.lineStyle(3, 0x8b6914, 1); // Dark brown border
+    scroll.strokeRoundedRect(scrollX - scrollWidth/2, scrollY - scrollHeight/2, scrollWidth, scrollHeight, 10);
+    
+    // Add decorative corners (X-shaped fastenings)
+    const cornerSize = 15;
+    const corners = [
+      { x: scrollX - scrollWidth/2 + 20, y: scrollY - scrollHeight/2 + 20 },
+      { x: scrollX + scrollWidth/2 - 20, y: scrollY - scrollHeight/2 + 20 },
+      { x: scrollX - scrollWidth/2 + 20, y: scrollY + scrollHeight/2 - 20 },
+      { x: scrollX + scrollWidth/2 - 20, y: scrollY + scrollHeight/2 - 20 }
+    ];
+    
+    corners.forEach(corner => {
+      scroll.lineStyle(2, 0x8b6914, 1);
+      scroll.beginPath();
+      scroll.moveTo(corner.x - cornerSize, corner.y - cornerSize);
+      scroll.lineTo(corner.x + cornerSize, corner.y + cornerSize);
+      scroll.moveTo(corner.x + cornerSize, corner.y - cornerSize);
+      scroll.lineTo(corner.x - cornerSize, corner.y + cornerSize);
+      scroll.strokePath();
+    });
+    
+    scroll.setDepth(301); // Above overlay (300)
+    
+    // SCORE text (golden yellow) - responsive
+    const titleFontSize = 40 * panelScale;
+    const scoreLabelText = this.add.text(
+      scrollX,
+      scrollY - scrollHeight / 2 + scrollHeight * 0.18,
+      'SCORE',
+      {
+        fontSize: titleFontSize,
+        fill: '#ffd700',
+        stroke: '#8b6914',
+        strokeThickness: 4,
+        fontFamily: 'Arial',
+        fontStyle: 'bold'
+      }
+    ).setOrigin(0.5).setDepth(302);
+    
+    // Score number (large, golden yellow) - responsive
+    const scoreFontSize = 70 * panelScale;
+    const scoreNumberText = this.add.text(
+      scrollX,
+      scrollY - scrollHeight * 0.02,
+      `${this.score}`,
+      {
+        fontSize: scoreFontSize,
+        fill: '#ffd700',
+        stroke: '#8b6914',
+        strokeThickness: 5,
+        fontFamily: 'Arial',
+        fontStyle: 'bold'
+      }
+    ).setOrigin(0.5).setDepth(302);
+    
+    // RETRY button (blue circle with apple) - responsive
+    const retryButtonRadius = scrollHeight * 0.22;
+    const retryButtonX = scrollX - scrollWidth/4;
+    const retryButtonY = scrollY + scrollHeight * 0.22;
+    
+    const retryButton = this.add.graphics();
+    retryButton.fillStyle(0x0066cc, 1); // Blue
+    retryButton.fillCircle(retryButtonX, retryButtonY, retryButtonRadius);
+    retryButton.lineStyle(4, 0x000000, 1);
+    retryButton.strokeCircle(retryButtonX, retryButtonY, retryButtonRadius);
+    retryButton.setDepth(302);
+    
+    // Apple icon in retry button - responsive scale
+    const appleIcon = this.add.image(retryButtonX, retryButtonY, 'apple');
+    appleIcon.setScale(0.35 * panelScale);
+    appleIcon.setDepth(303);
+    
+    // RETRY text around button
+    const retryText = this.add.text(
+      retryButtonX,
+      retryButtonY - retryButtonRadius - 10 * panelScale,
+      'RETRY',
+      {
+        fontSize: 22 * panelScale,
+        fill: '#ffffff',
+        stroke: '#000000',
+        strokeThickness: 3,
+        fontFamily: 'Arial',
+        fontStyle: 'bold'
+      }
+    ).setOrigin(0.5).setDepth(302);
+    
+    // QUIT button (red circle with bomb) - responsive
+    const quitButtonRadius = scrollHeight * 0.22;
+    const quitButtonX = scrollX + scrollWidth/4;
+    const quitButtonY = retryButtonY;
+    
+    const quitButton = this.add.graphics();
+    quitButton.fillStyle(0xcc0000, 1); // Red
+    quitButton.fillCircle(quitButtonX, quitButtonY, quitButtonRadius);
+    quitButton.lineStyle(4, 0x000000, 1);
+    quitButton.strokeCircle(quitButtonX, quitButtonY, quitButtonRadius);
+    quitButton.setDepth(302);
+    
+    // Bomb icon in quit button - responsive scale
+    const bombIcon = this.add.image(quitButtonX, quitButtonY, 'bomb');
+    bombIcon.setScale(0.32 * panelScale);
+    bombIcon.setDepth(303);
+    
+    // QUIT text around button
+    const quitText = this.add.text(
+      quitButtonX,
+      quitButtonY - quitButtonRadius - 10 * panelScale,
+      'QUIT',
+      {
+        fontSize: 22 * panelScale,
+        fill: '#ffffff',
+        stroke: '#000000',
+        strokeThickness: 3,
+        fontFamily: 'Arial',
+        fontStyle: 'bold'
+      }
+    ).setOrigin(0.5).setDepth(302);
+    
+    // Make buttons interactive using Phaser zones
+    const retryZone = this.add.zone(retryButtonX, retryButtonY, retryButtonRadius * 2, retryButtonRadius * 2);
+    retryZone.setInteractive();
+    retryZone.setDepth(304);
+    
+    const quitZone = this.add.zone(quitButtonX, quitButtonY, quitButtonRadius * 2, quitButtonRadius * 2);
+    quitZone.setInteractive();
+    quitZone.setDepth(304);
+    
+    // Store button references for cleanup
+    this.gameOverButtons = { retryZone, quitZone };
+    
+    // Retry button click handler
+    retryZone.on('pointerdown', () => {
+      // Set flag to auto-start after restart
+      if (!this.scene.settings.data) {
+        this.scene.settings.data = {};
+      }
+      this.scene.settings.data.autoStart = true;
+      this.scene.restart();
+    });
+    
+    // Quit button click handler
+    quitZone.on('pointerdown', () => {
+      // Exit fullscreen if active
+      if (document.exitFullscreen) {
+        document.exitFullscreen();
+      } else if (document.webkitExitFullscreen) {
+        document.webkitExitFullscreen();
+      } else if (document.mozCancelFullScreen) {
+        document.mozCancelFullScreen();
+      } else if (document.msExitFullscreen) {
+        document.msExitFullscreen();
+      }
+      // Reload page to go back to start screen
+      window.location.reload();
+    });
+    
+    // Add hover effects
+    retryZone.on('pointerover', () => {
+      retryButton.clear();
+      retryButton.fillStyle(0x0088ff, 1); // Lighter blue on hover
+      retryButton.fillCircle(retryButtonX, retryButtonY, retryButtonRadius);
+      retryButton.lineStyle(4, 0x000000, 1);
+      retryButton.strokeCircle(retryButtonX, retryButtonY, retryButtonRadius);
+    });
+    
+    retryZone.on('pointerout', () => {
+      retryButton.clear();
+      retryButton.fillStyle(0x0066cc, 1); // Original blue
+      retryButton.fillCircle(retryButtonX, retryButtonY, retryButtonRadius);
+      retryButton.lineStyle(4, 0x000000, 1);
+      retryButton.strokeCircle(retryButtonX, retryButtonY, retryButtonRadius);
+    });
+    
+    quitZone.on('pointerover', () => {
+      quitButton.clear();
+      quitButton.fillStyle(0xff0000, 1); // Lighter red on hover
+      quitButton.fillCircle(quitButtonX, quitButtonY, quitButtonRadius);
+      quitButton.lineStyle(4, 0x000000, 1);
+      quitButton.strokeCircle(quitButtonX, quitButtonY, quitButtonRadius);
+    });
+    
+    quitZone.on('pointerout', () => {
+      quitButton.clear();
+      quitButton.fillStyle(0xcc0000, 1); // Original red
+      quitButton.fillCircle(quitButtonX, quitButtonY, quitButtonRadius);
+      quitButton.lineStyle(4, 0x000000, 1);
+      quitButton.strokeCircle(quitButtonX, quitButtonY, quitButtonRadius);
+    });
+
+    console.log(`🎮 Game Over: ${reason} | Final Score: ${this.score} | Best: ${this.bestScore}`);
+  }
+
+  // Update background size when screen dimensions change
+  updateBackgroundSize() {
+    if (!this.bg) return;
+    
+    const width = this.cameras.main.width;
+    const height = this.cameras.main.height;
+    
+    this.bg.displayWidth = width;
+    this.bg.displayHeight = height;
+    
+    console.log('🖼️ Background updated:', { width, height });
   }
 
   update() {
@@ -111,19 +667,36 @@ export class MainScene extends Phaser.Scene {
         );
       const baseScale = isMobile ? 0.2 : 0.3;
       this.fruitScale = Phaser.Math.Clamp(baseScale * scaleFactor, 0.15, 0.35);
+      
+      // Update background size when dimensions change (e.g., fullscreen)
+      this.updateBackgroundSize();
     }
 
     this.fruits.getChildren().forEach((fruit) => {
       if (fruit && fruit.active && fruit.y > this.cameras.main.height) {
-        console.log("fruit destroyed ", fruit.name);
+        console.log("fruit destroyed ", fruit.texture.key);
+        
+        // Check if it's a bomb (bombs don't count as misses)
+        if (fruit.texture.key !== 'bomb') {
+          this.misses++;
+          this.updateUI();
+          
+          if (this.misses >= this.maxMisses) {
+            this.endGame('You missed 3 fruits!');
+          }
+        }
+        
         fruit.destroy();
       }
     });
 
-    if (this.isSwiping && this.swipePoints.length > 1) {
-      this.checkSwipeAgainstFruits();
+    // Don't process swipes if game is over
+    if (!this.gameOver) {
+      if (this.isSwiping && this.swipePoints.length > 1) {
+        this.checkSwipeAgainstFruits();
+      }
+      this.drawSwipeTrail();
     }
-    this.drawSwipeTrail();
   }
   checkSwipeAgainstFruits() {
     const points = this.swipePoints;
@@ -225,6 +798,36 @@ export class MainScene extends Phaser.Scene {
     console.log("Fruit Size:", { width: fruit.width, height: fruit.height });
 
     const key = fruit.texture.key;
+    
+    // Check if bomb was sliced - create explosion effect then game over!
+    if (key === 'bomb') {
+      // Immediately mark game over so no more fruits can be sliced in the same swipe/update
+      this.gameOver = true;
+
+      const bombX = fruit.x;
+      const bombY = fruit.y;
+      fruit.destroy();
+      
+      // Create bomb explosion - full screen white flash
+      this.createBombExplosion(bombX, bombY);
+      
+      // Sequence: White flash -> Game Over text -> Panel
+      // Show "GAME OVER" text after white flash starts fading
+      this.time.delayedCall(100, () => {
+        this.showGameOverText();
+      });
+      
+      // Show panel after game over text (longer delay to see the text)
+      this.time.delayedCall(1200, () => {
+        this.endGame('You sliced a bomb!');
+      });
+      
+      return;
+    }
+    
+    // Increment score for slicing fruits
+    this.score++;
+    this.updateUI();
     const x = fruit.x;
     const y = fruit.y;
     const scale = fruit.scaleX;
@@ -268,6 +871,7 @@ export class MainScene extends Phaser.Scene {
     top.setCrop(0, 0, texW, texH / 2);
     top.setOrigin(0.5, 1); // cut-line origin
     top.setRotation(fruit.rotation);
+    top.setDepth(10); // Above juice splatters
     console.log("Top Half:", {
       position: { x: top.x, y: top.y },
       scale: top.scaleX,
@@ -283,6 +887,7 @@ export class MainScene extends Phaser.Scene {
     bottom.setCrop(0, texH / 2, texW, texH / 2);
     bottom.setRotation(fruit.rotation);
     bottom.setOrigin(0.5, 0);
+    bottom.setDepth(10); // Above juice splatters
     console.log("Bottom Half:", {
       position: { x: bottom.x, y: bottom.y },
       scale: bottom.scaleX,
@@ -443,37 +1048,202 @@ export class MainScene extends Phaser.Scene {
   }
   createJuiceSplash(x, y, angle, fruitKey) {
     const colors = {
-      apple: 0xff4d4d,
-      pear: 0xa4ff4d,
-      peach: 0xffb84d,
-      waterMelon: 0xff3355,
-      bomb: 0x000000,
+        apple: 0xff2b2b,
+        pear: 0x6fff3a,
+        peach: 0xff8c3a,
+        waterMelon: 0xff2b6e,
+        bomb: 0x444444,
     };
 
-    const color = colors[fruitKey] || 0xff5555;
+    const color = colors[fruitKey] || 0xff2b2b;
+    const allSplatters = [];
 
-    for (let i = 0; i < 8; i++) {
-      const particle = this.add.circle(
-        x + Phaser.Math.Between(-15, 15),
-        y + Phaser.Math.Between(-15, 15),
-        Phaser.Math.Between(3, 6),
-        color
-      );
+    // Helper function to create smooth, organic blob shape (rounded and organic)
+    const createSmoothBlob = (centerX, centerY, baseRadius, colorVal, alpha) => {
+      const blob = this.add.graphics();
+      blob.setDepth(1);
+      blob.fillStyle(colorVal, alpha);
+      
+      // Use fewer points for smoother, rounder shape
+      const numPoints = Phaser.Math.Between(16, 24);
+      blob.beginPath();
+      
+      for (let i = 0; i <= numPoints; i++) {
+        const angle = (i / numPoints) * Math.PI * 2;
+        
+        // Create smooth, subtle radius variations (no sharp spikes)
+        // Most points stay close to base radius, with gentle variations
+        const variation = Phaser.Math.FloatBetween(0.85, 1.15); // Subtle variation
+        const radius = baseRadius * variation;
+        
+        const px = centerX + Math.cos(angle) * radius;
+        const py = centerY + Math.sin(angle) * radius;
+        
+        if (i === 0) blob.moveTo(px, py);
+        else blob.lineTo(px, py);
+      }
+      
+      blob.closePath();
+      blob.fillPath();
+      return blob;
+    };
 
-      const spread = angle + Phaser.Math.FloatBetween(-0.5, 0.5);
-      const speed = Phaser.Math.Between(80, 140);
-
-      this.tweens.add({
-        targets: particle,
-        x: particle.x + Math.cos(spread) * speed,
-        y: particle.y + Math.sin(spread) * speed,
-        alpha: 0,
-        scale: 0,
-        duration: Phaser.Math.Between(300, 500),
-        onComplete: () => particle.destroy(),
-      });
+    // Helper function to create tear-drop/comet shape for drips
+    const createTearDrop = (startX, startY, angle, length, width, colorVal, alpha) => {
+      const drip = this.add.graphics();
+      drip.setDepth(1);
+      drip.fillStyle(colorVal, alpha);
+      
+      const endX = startX + Math.cos(angle) * length;
+      const endY = startY + Math.sin(angle) * length;
+      
+      // Create tear-drop shape using multiple points for smooth curve
+      // Wide at start, narrow at end
+      const points = 12;
+      drip.beginPath();
+      
+      // Start point (wide end)
+      const perpAngle = angle + Math.PI / 2;
+      const startLeftX = startX + Math.cos(perpAngle) * width * 0.5;
+      const startLeftY = startY + Math.sin(perpAngle) * width * 0.5;
+      drip.moveTo(startLeftX, startLeftY);
+      
+      // Create left side curve (from wide to narrow)
+      for (let i = 0; i <= points; i++) {
+        const t = i / points; // 0 to 1
+        const currentLength = length * t;
+        const currentWidth = width * (1 - t * 0.7); // Narrow as we go
+        
+        const leftX = startX + Math.cos(angle) * currentLength + Math.cos(perpAngle) * currentWidth * 0.5;
+        const leftY = startY + Math.sin(angle) * currentLength + Math.sin(perpAngle) * currentWidth * 0.5;
+        drip.lineTo(leftX, leftY);
+      }
+      
+      // End point (narrow tip)
+      drip.lineTo(endX, endY);
+      
+      // Create right side curve (back from narrow to wide)
+      for (let i = points; i >= 0; i--) {
+        const t = i / points; // 1 to 0
+        const currentLength = length * t;
+        const currentWidth = width * (1 - t * 0.7);
+        
+        const rightX = startX + Math.cos(angle) * currentLength + Math.cos(perpAngle) * -currentWidth * 0.5;
+        const rightY = startY + Math.sin(angle) * currentLength + Math.sin(perpAngle) * -currentWidth * 0.5;
+        drip.lineTo(rightX, rightY);
+      }
+      
+      drip.closePath();
+      drip.fillPath();
+      
+      return drip;
+    };
+    
+    // Main splatter - create multiple layers for depth and glow effect
+    const mainSize = Phaser.Math.Between(35, 55);
+    
+    // Outer glow layer (larger, more transparent) - smooth and rounded
+    const glowLayer = createSmoothBlob(x, y, mainSize * 1.3, color, 0.15);
+    allSplatters.push(glowLayer);
+    
+    // Middle layer - smooth and rounded
+    const middleLayer = createSmoothBlob(x, y, mainSize * 1.1, color, 0.4);
+    allSplatters.push(middleLayer);
+    
+    // Main dense layer (most opaque) - smooth and rounded
+    const mainLayer = createSmoothBlob(x, y, mainSize, color, 0.75);
+    allSplatters.push(mainLayer);
+    
+    // Add smaller splatter blobs with varying sizes and opacities (smooth and rounded)
+    const numSmallBlobs = Phaser.Math.Between(8, 15);
+    for (let i = 0; i < numSmallBlobs; i++) {
+      const offsetX = x + Phaser.Math.Between(-50, 50);
+      const offsetY = y + Phaser.Math.Between(-50, 50);
+      const smallSize = Phaser.Math.Between(4, 15);
+      const smallAlpha = Phaser.Math.FloatBetween(0.3, 0.7);
+      
+      const smallBlob = createSmoothBlob(offsetX, offsetY, smallSize, color, smallAlpha);
+      allSplatters.push(smallBlob);
     }
+    
+    // Create smooth, rounded drips/tendrils radiating outward (subtle and organic)
+    const numDrips = Phaser.Math.Between(5, 10);
+    for (let i = 0; i < numDrips; i++) {
+      // Random angle for drip direction
+      const dripAngle = Phaser.Math.FloatBetween(0, Math.PI * 2);
+      
+      // Start position slightly offset from center
+      const startOffset = Phaser.Math.Between(8, 25);
+      const startX = x + Math.cos(dripAngle) * startOffset;
+      const startY = y + Math.sin(dripAngle) * startOffset;
+      
+      // Drip length and width (shorter, smoother drips)
+      const dripLength = Phaser.Math.Between(15, 40);
+      const dripWidth = Phaser.Math.Between(3, 8);
+      const dripAlpha = Phaser.Math.FloatBetween(0.5, 0.8);
+      
+      const drip = createTearDrop(startX, startY, dripAngle, dripLength, dripWidth, color, dripAlpha);
+      allSplatters.push(drip);
+    }
+    
+    // Add smooth circular droplets scattered around (more numerous, smaller)
+    const numDroplets = Phaser.Math.Between(12, 25);
+    for (let i = 0; i < numDroplets; i++) {
+      const droplet = this.add.graphics();
+      droplet.setDepth(1);
+      
+      const dist = Phaser.Math.Between(25, 80);
+      const a = Phaser.Math.FloatBetween(0, Math.PI * 2);
+      const px = x + Math.cos(a) * dist;
+      const py = y + Math.sin(a) * dist;
+      const radius = Phaser.Math.Between(1.5, 6);
+      const dropletAlpha = Phaser.Math.FloatBetween(0.4, 0.8);
+      
+      droplet.fillStyle(color, dropletAlpha);
+      droplet.fillCircle(px, py, radius);
+      
+      allSplatters.push(droplet);
+    }
+    
+    // Add spray droplets along the slice direction
+    const sprayCount = Phaser.Math.Between(8, 15);
+    for (let i = 0; i < sprayCount; i++) {
+      const spray = this.add.graphics();
+      spray.setDepth(1);
+      
+      const dist = Phaser.Math.Between(40, 130);
+      const spread = Phaser.Math.FloatBetween(-0.5, 0.5);
+      const a = angle + spread;
+      const radius = Phaser.Math.Between(2, 6);
+      const sprayAlpha = Phaser.Math.FloatBetween(0.6, 0.95);
+      
+      spray.fillStyle(color, sprayAlpha);
+      spray.fillCircle(
+        x + Math.cos(a) * dist,
+        y + Math.sin(a) * dist,
+        radius
+      );
+      
+      allSplatters.push(spray);
+    }
+
+    // Animation — fade out after 1-2 seconds
+    allSplatters.forEach((splatter) => {
+      const fadeDelay = Phaser.Math.Between(1000, 2000);
+      this.time.delayedCall(fadeDelay, () => {
+        this.tweens.add({
+          targets: splatter,
+          alpha: 0,
+          duration: 300,
+          onComplete: () => splatter.destroy()
+        });
+      });
+    });
+
+    // Add to global group
+    allSplatters.forEach(s => this.juiceSplatters.add(s));
   }
+
 
   lineCircleIntersect(x1, y1, x2, y2, cx, cy, r) {
     // Step 1: Line segment vector
@@ -515,19 +1285,82 @@ export class MainScene extends Phaser.Scene {
 
     if (points.length < 2) return;
 
-    // Draw outer glow (thicker, more transparent)
-    this.trailGraphics.lineStyle(8, 0xffffff, 0.3);
+    const startPoint = points[0];
+    const endPoint = points[points.length - 1];
+    
+    // Blade dimensions - wider at front (end), sharp at back (start)
+    const baseWidth = 15; // Width at the front (end of swipe)
+    const tipWidth = 1; // Width at the back (start of swipe - sharp tip)
+    
+    // Create blade shape - sharp white blade
+    this.trailGraphics.fillStyle(0xffffff, 0.95); // Pure white, slightly transparent
+    this.trailGraphics.lineStyle(1, 0xeeeeee, 0.9); // Light edge
+    
+    // Draw blade as a filled shape (wider at front, sharp at back)
     this.trailGraphics.beginPath();
-    this.trailGraphics.moveTo(points[0].x, points[0].y);
+    
+    // Left edge (from back/tip to front/base, expanding)
+    for (let i = 0; i < points.length; i++) {
+      const t = i / (points.length - 1);
+      const currentWidth = tipWidth * (1 - t) + baseWidth * t; // Expand from tip to base (opposite)
+      
+      const p = points[i];
+      let pNext = points[Math.min(i + 1, points.length - 1)];
+      
+      // Calculate perpendicular angle for this segment
+      const segmentAngle = Phaser.Math.Angle.Between(p.x, p.y, pNext.x, pNext.y);
+      const perp = segmentAngle + Math.PI / 2;
+      
+      // Calculate offset for blade edge
+      const offsetX = Math.cos(perp) * currentWidth * 0.5;
+      const offsetY = Math.sin(perp) * currentWidth * 0.5;
+      
+      if (i === 0) {
+        this.trailGraphics.moveTo(p.x + offsetX, p.y + offsetY);
+      } else {
+        this.trailGraphics.lineTo(p.x + offsetX, p.y + offsetY);
+      }
+    }
+    
+    // Base point (wide front)
+    this.trailGraphics.lineTo(endPoint.x, endPoint.y);
+    
+    // Right edge (from front/base back to tip, narrowing)
+    for (let i = points.length - 1; i >= 0; i--) {
+      const t = i / (points.length - 1);
+      const currentWidth = tipWidth * (1 - t) + baseWidth * t; // Narrow from base to tip (opposite)
+      
+      const p = points[i];
+      let pPrev = points[Math.max(i - 1, 0)];
+      
+      // Calculate perpendicular angle for this segment
+      const segmentAngle = Phaser.Math.Angle.Between(pPrev.x, pPrev.y, p.x, p.y);
+      const perp = segmentAngle + Math.PI / 2;
+      
+      // Calculate offset for blade edge (opposite side)
+      const offsetX = Math.cos(perp) * -currentWidth * 0.5;
+      const offsetY = Math.sin(perp) * -currentWidth * 0.5;
+      
+      this.trailGraphics.lineTo(p.x + offsetX, p.y + offsetY);
+    }
+    
+    this.trailGraphics.closePath();
+    this.trailGraphics.fillPath();
+    this.trailGraphics.strokePath();
+    
+    // Add bright center line for extra sharpness and definition
+    this.trailGraphics.lineStyle(2, 0xffffff, 1);
+    this.trailGraphics.beginPath();
+    this.trailGraphics.moveTo(startPoint.x, startPoint.y);
     for (let i = 1; i < points.length; i++) {
       this.trailGraphics.lineTo(points[i].x, points[i].y);
     }
     this.trailGraphics.strokePath();
-
-    // Draw inner bright line
-    this.trailGraphics.lineStyle(4, 0xffffff, 0.9);
+    
+    // Add subtle outer glow for depth
+    this.trailGraphics.lineStyle(10, 0xffffff, 0.15);
     this.trailGraphics.beginPath();
-    this.trailGraphics.moveTo(points[0].x, points[0].y);
+    this.trailGraphics.moveTo(startPoint.x, startPoint.y);
     for (let i = 1; i < points.length; i++) {
       this.trailGraphics.lineTo(points[i].x, points[i].y);
     }
@@ -542,6 +1375,7 @@ export class MainScene extends Phaser.Scene {
 
     // Use responsive scale
     fruit.setScale(this.fruitScale);
+    fruit.setDepth(10); // Fruits above juice splatters
     this.fruits.add(fruit);
 
     // Calculate direction toward center

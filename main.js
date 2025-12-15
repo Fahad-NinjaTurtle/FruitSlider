@@ -47,6 +47,9 @@ const config = {
 
 const game = new Phaser.Game(config);
 
+// Make game instance globally accessible for fullscreen
+window.gameInstance = game;
+
 // Handle window resize
 window.addEventListener('resize', () => {
     game.scale.refresh();
