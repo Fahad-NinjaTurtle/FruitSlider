@@ -1,7 +1,14 @@
+import { GameConfig } from './GameConfig.js';
+import { FruitSpawner } from './FruitSpawner.js';
+
 export class MainScene extends Phaser.Scene {
   constructor() {
     super("MainScene");
+    this.config = new GameConfig();
+    // Last time we played the trail whoosh sound (for cooldown)
+    this.lastTrailWhooshTime = 0;
   }
+
   preload() {
     this.load.image("waterMelon", "sprites/waterMelon.png");
     this.load.image("apple", "sprites/apple.png");
@@ -11,6 +18,15 @@ export class MainScene extends Phaser.Scene {
     this.load.image("background", "sprites/background.png");
     this.load.image("trail", "sprites/Trail.png");
     this.load.image("cross", "sprites/cross.png");
+
+    // --- Audio ---
+    this.load.audio("sfxGameStart", "sounds/Game-start.wav");
+    this.load.audio("sfxGameOver", "sounds/Critical.wav");
+    this.load.audio("sfxBombExplode", "sounds/Bomb-explode.wav");
+    this.load.audio("sfxFruitSlice", "sounds/Splatter-Medium-2.wav");
+    this.load.audio("sfxTrailWhoosh", "sounds/whoosh.wav");
+    this.load.audio("sfxThrowFruit", "sounds/Throw-fruit.wav");
+    this.load.audio("sfxMissFruit", "sounds/miss.wav");
   }
 
   create() {
@@ -40,13 +56,8 @@ export class MainScene extends Phaser.Scene {
         navigator.userAgent
       );
 
-    // Scale fruits proportionally to screen size
-    // Mobile gets smaller base scale, then scales with screen
-    const baseScale = isMobile ? 0.2 : 0.3;
-    this.fruitScale = baseScale * scaleFactor;
-
-    // Clamp scale to reasonable limits
-    this.fruitScale = Phaser.Math.Clamp(this.fruitScale, 0.15, 0.35);
+    // Scale fruits proportionally to screen size using config
+    this.fruitScale = this.config.getScaleFactor(height, isMobile);
 
     this.fruits = this.physics.add.group();
     
@@ -54,8 +65,8 @@ export class MainScene extends Phaser.Scene {
     this.juiceSplatters = this.add.group();
     this.juiceSplatters.setDepth(1); // Behind fruits but above background
 
-    // Don't start fruit spawning yet - wait for start button
-    this.fruitSpawnTimer = null;
+    // Initialize fruit spawner
+    this.fruitSpawner = new FruitSpawner(this, this.config);
     this.gameStarted = false;
     
     // Check if we're restarting from game over - auto-start if needed
@@ -71,25 +82,29 @@ export class MainScene extends Phaser.Scene {
     // Game state
     this.score = 0;
     this.misses = 0;
-    this.maxMisses = 3;
+    this.maxMisses = this.config.game.maxMisses;
     this.gameOver = false;
     
     // Load best score from localStorage
-    this.bestScore = parseInt(localStorage.getItem('fruitNinjaBestScore') || '0', 10);
+    this.bestScore = parseInt(
+      localStorage.getItem(this.config.game.bestScoreKey) || '0', 
+      10
+    );
 
     // UI Elements - Style matching the image
     // Calculate responsive positions based on screen size
-    const baseWidth = 1920;
-    const baseHeightUI = 1080;
-    const uiScale = Math.min(width / baseWidth, height / baseHeightUI);
+    const uiScale = Math.min(
+      width / this.config.ui.baseWidth, 
+      height / this.config.ui.baseHeight
+    );
     
     // Top-left UI group
     const topLeftX = 40;
     const topLeftY = 40;
     
     // Yellow score box - no watermelon icon
-    const scoreBoxWidth = 100;
-    const scoreBoxHeight = 45;
+    const scoreBoxWidth = this.config.ui.scoreBoxWidth;
+    const scoreBoxHeight = this.config.ui.scoreBoxHeight;
     const scoreBoxX = topLeftX + 50; // Positioned at left edge
     const scoreBoxY = topLeftY;
     
@@ -118,16 +133,18 @@ export class MainScene extends Phaser.Scene {
     
     // Miss counter - Cross icons from sprite (top right)
     this.missIcons = [];
-    const missIconSpacing = 80; // Increased spacing for larger crosses
+    const missIconSpacing = this.config.ui.missIconSpacing;
     const missIconStartX = width - 200; // Adjusted position for larger icons
     const missIconY = topLeftY;
-    const missIconSize = 72; // Size of cross icon (2x larger)
+    const missIconSize = this.config.ui.missIconSize;
     
     for (let i = 0; i < this.maxMisses; i++) {
-      const crossIcon = this.add.image(missIconStartX + i * missIconSpacing, missIconY, 'cross');
-      // Set scale to match the original blue circle size (36px diameter = 18px radius)
-      // Assuming cross.png is around 72x72, scale to ~36px
-      crossIcon.setDisplaySize(72, 72); // 2x size (was 36, now 72)
+      const crossIcon = this.add.image(
+        missIconStartX + i * missIconSpacing, 
+        missIconY, 
+        'cross'
+      );
+      crossIcon.setDisplaySize(missIconSize, missIconSize);
       crossIcon.setDepth(100);
       this.missIcons.push(crossIcon);
     }
@@ -155,8 +172,10 @@ export class MainScene extends Phaser.Scene {
         this.trailClearTimer = null;
       }
       
-      // Set timer to clear trail if no movement after 200ms
-      this.trailClearTimer = this.time.delayedCall(200, () => {
+      // Set timer to clear trail if no movement
+      this.trailClearTimer = this.time.delayedCall(
+        this.config.effects.trail.clearDelay, 
+        () => {
         if (this.swipePoints.length <= 1) {
           // No movement detected, clear trail
           this.trailGraphics.clear();
@@ -177,6 +196,27 @@ export class MainScene extends Phaser.Scene {
       }
 
       const now = this.time.now;
+
+      // Calculate swipe speed between last point and this point
+      if (this.swipePoints.length > 0) {
+        const lastPoint = this.swipePoints[this.swipePoints.length - 1];
+        const dx = p.x - lastPoint.x;
+        const dy = p.y - lastPoint.y;
+        const dt = Math.max(now - lastPoint.time, 1); // avoid divide by zero
+        const distance = Math.sqrt(dx * dx + dy * dy); // pixels
+        const speed = distance / dt; // pixels per ms
+
+        // If moving fast enough and cooldown passed, play whoosh
+        const SPEED_THRESHOLD = 3; // tweak: higher = need faster swipe
+        const COOLDOWN = 180; // ms between whooshes
+        if (
+          speed > SPEED_THRESHOLD &&
+          now - this.lastTrailWhooshTime > COOLDOWN
+        ) {
+          this.sound.play("sfxTrailWhoosh", { volume: 0.6 });
+          this.lastTrailWhooshTime = now;
+        }
+      }
 
       this.swipePoints.push({
         x: p.x,
@@ -204,15 +244,17 @@ export class MainScene extends Phaser.Scene {
       this.swipePoints = this.swipePoints.filter((pt) => pt.time > cutoff);
       this.isSwiping = false;
       
-      // Fade out trail after 1 second
+      // Fade out trail
       if (this.trailFadeTimer) {
         this.trailFadeTimer.remove();
       }
-      this.trailFadeTimer = this.time.delayedCall(1000, () => {
-        this.tweens.add({
-          targets: this.trailGraphics,
-          alpha: 0,
-          duration: 200,
+      this.trailFadeTimer = this.time.delayedCall(
+        this.config.effects.trail.fadeDelay, 
+        () => {
+          this.tweens.add({
+            targets: this.trailGraphics,
+            alpha: 0,
+            duration: this.config.effects.trail.fadeDuration,
           onComplete: () => {
             this.trailGraphics.clear();
             this.trailGraphics.alpha = 1;
@@ -258,26 +300,18 @@ export class MainScene extends Phaser.Scene {
     this.misses = 0;
     
     // Reload best score
-    this.bestScore = parseInt(localStorage.getItem('fruitNinjaBestScore') || '0', 10);
-    
+    this.bestScore = parseInt(
+      localStorage.getItem(this.config.game.bestScoreKey) || '0', 
+      10
+    );
+
     this.updateUI();
+
+    // Play game start sound
+    this.sound.play("sfxGameStart", { volume: 0.8 });
     
-    const width = this.cameras.main.width;
-    const height = this.cameras.main.height;
-    
-    // Start fruit spawning
-    this.fruitSpawnTimer = this.time.addEvent({
-      delay: 1200,
-      callback: () => {
-        if (this.gameOver) return; // Don't spawn if game is over
-        const fruitType = ["waterMelon", "apple", "peach", "pear", "bomb"];
-        const randomFruit =
-          fruitType[Phaser.Math.Between(0, fruitType.length - 1)];
-        const randomSpawnX = Phaser.Math.Between(50, width - 50);
-        this.spawnFruit(randomFruit, randomSpawnX, width, height);
-      },
-      loop: true,
-    });
+    // Start fruit spawning using spawner
+    this.fruitSpawner.start();
     
     console.log('🎮 Game started - fruits will now spawn');
   }
@@ -317,11 +351,11 @@ export class MainScene extends Phaser.Scene {
     whiteFlash.fillRect(0, 0, width, height);
     whiteFlash.setDepth(250); // Above everything
     
-    // Flash appears instantly, then fades out over 1s
+    // Flash appears instantly, then fades out
     this.tweens.add({
       targets: whiteFlash,
       alpha: 0,
-      duration: 1500, // Fade out over 1000ms (1 second)
+      duration: this.config.effects.bomb.flashDuration,
       ease: 'Power2',
       onComplete: () => {
         whiteFlash.destroy();
@@ -371,6 +405,9 @@ export class MainScene extends Phaser.Scene {
     
     console.log('🎮 endGame called:', reason);
     this.gameOver = true;
+
+    // Play game over sound once when the game ends
+    this.sound.play("sfxGameOver", { volume: 0.9 });
     
     // Use UI scale if available, otherwise default to 1
     const uiScale = this.uiScale || 1;
@@ -397,14 +434,14 @@ export class MainScene extends Phaser.Scene {
     // Update best score
     if (this.score > this.bestScore) {
       this.bestScore = this.score;
-      localStorage.setItem('fruitNinjaBestScore', this.bestScore.toString());
+      localStorage.setItem(
+        this.config.game.bestScoreKey, 
+        this.bestScore.toString()
+      );
     }
     
     // Stop fruit spawning
-    if (this.fruitSpawnTimer) {
-      this.fruitSpawnTimer.remove();
-      this.fruitSpawnTimer = null;
-    }
+    this.fruitSpawner.stop();
     
     const width = this.cameras.main.width;
     const height = this.cameras.main.height;
@@ -648,7 +685,10 @@ export class MainScene extends Phaser.Scene {
     console.log('🖼️ Background updated:', { width, height });
   }
 
-  update() {
+  /**
+   * Update game state (logic only, no rendering)
+   */
+  updateGameState() {
     // Update dimensions if window resized
     const currentWidth = this.cameras.main.width;
     const currentHeight = this.cameras.main.height;
@@ -658,30 +698,61 @@ export class MainScene extends Phaser.Scene {
       this.gameHeight = currentHeight;
       this.centerX = currentWidth / 2;
 
-      // Recalculate scale
-      const baseHeight = 1080;
-      const scaleFactor = currentHeight / baseHeight;
+      // Recalculate scale using config
       const isMobile =
         /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
           navigator.userAgent
         );
-      const baseScale = isMobile ? 0.2 : 0.3;
-      this.fruitScale = Phaser.Math.Clamp(baseScale * scaleFactor, 0.15, 0.35);
+      this.fruitScale = this.config.getScaleFactor(currentHeight, isMobile);
       
       // Update background size when dimensions change (e.g., fullscreen)
       this.updateBackgroundSize();
     }
 
+    // Check for fruits going off-screen
+    this.checkFruitsOffScreen();
+
+    // Process swipe collisions if game is active
+    if (!this.gameOver && this.isSwiping && this.swipePoints.length > 1) {
+      this.checkSwipeAgainstFruits();
+    }
+  }
+
+  /**
+   * Render visual updates
+   */
+  render() {
+    // Draw swipe trail
+    if (!this.gameOver) {
+      this.drawSwipeTrail();
+    }
+  }
+
+  /**
+   * Main update loop - separates state updates from rendering
+   */
+  update() {
+    this.updateGameState();
+    this.render();
+  }
+
+  /**
+   * Check for fruits that have gone off-screen
+   */
+  checkFruitsOffScreen() {
     this.fruits.getChildren().forEach((fruit) => {
       if (fruit && fruit.active && fruit.y > this.cameras.main.height) {
         console.log("fruit destroyed ", fruit.texture.key);
         
         // Check if it's a bomb (bombs don't count as misses)
         if (fruit.texture.key !== 'bomb') {
+          // Play miss sound for each missed fruit
+          this.sound.play("sfxMissFruit", { volume: 0.7 });
+
           this.misses++;
           this.updateUI();
           
-          if (this.misses >= this.maxMisses) {
+          if (this.misses >= this.config.game.maxMisses) {
             this.endGame('You missed 3 fruits!');
           }
         }
@@ -689,14 +760,6 @@ export class MainScene extends Phaser.Scene {
         fruit.destroy();
       }
     });
-
-    // Don't process swipes if game is over
-    if (!this.gameOver) {
-      if (this.isSwiping && this.swipePoints.length > 1) {
-        this.checkSwipeAgainstFruits();
-      }
-      this.drawSwipeTrail();
-    }
   }
   checkSwipeAgainstFruits() {
     const points = this.swipePoints;
@@ -807,18 +870,21 @@ export class MainScene extends Phaser.Scene {
       const bombX = fruit.x;
       const bombY = fruit.y;
       fruit.destroy();
+
+      // Play bomb explosion sound
+      this.sound.play("sfxBombExplode", { volume: 0.9 });
       
       // Create bomb explosion - full screen white flash
       this.createBombExplosion(bombX, bombY);
       
       // Sequence: White flash -> Game Over text -> Panel
       // Show "GAME OVER" text after white flash starts fading
-      this.time.delayedCall(100, () => {
+      this.time.delayedCall(this.config.effects.bomb.gameOverTextDelay, () => {
         this.showGameOverText();
       });
       
-      // Show panel after game over text (longer delay to see the text)
-      this.time.delayedCall(1200, () => {
+      // Show panel after game over text
+      this.time.delayedCall(this.config.effects.bomb.panelDelay, () => {
         this.endGame('You sliced a bomb!');
       });
       
@@ -828,6 +894,9 @@ export class MainScene extends Phaser.Scene {
     // Increment score for slicing fruits
     this.score++;
     this.updateUI();
+
+    // Play fruit slice splatter sound
+    this.sound.play("sfxFruitSlice", { volume: 0.7 });
     const x = fruit.x;
     const y = fruit.y;
     const scale = fruit.scaleX;
@@ -902,7 +971,7 @@ export class MainScene extends Phaser.Scene {
 
     // ---------- PHYSICS FORCE OUTWARD ----------
     // Calculate separation direction based on which side of swipe line each half is on
-    const force = 500;
+    const force = this.config.fruit.separationForce;
     const perpAngle = sliceAngle + Math.PI / 2;
     
     // Calculate swipe line direction vector (normalized)
@@ -989,12 +1058,19 @@ export class MainScene extends Phaser.Scene {
     top.body.setVelocity(topVelX, topVelY);
     bottom.body.setVelocity(bottomVelX, bottomVelY);
 
-    top.body.setGravityY(1200);
-    bottom.body.setGravityY(1200);
-    console.log("Gravity:", 1200);
+    const slicedGravity = this.config.fruit.slicedGravity;
+    top.body.setGravityY(slicedGravity);
+    bottom.body.setGravityY(slicedGravity);
+    console.log("Gravity:", slicedGravity);
 
-    const topAngularVel = Phaser.Math.Between(80, 90);
-    const bottomAngularVel = -Phaser.Math.Between(80, 90);
+    const topAngularVel = Phaser.Math.Between(
+      this.config.fruit.slicedAngularVelocityMin,
+      this.config.fruit.slicedAngularVelocityMax
+    );
+    const bottomAngularVel = -Phaser.Math.Between(
+      this.config.fruit.slicedAngularVelocityMin,
+      this.config.fruit.slicedAngularVelocityMax
+    );
     top.body.setAngularVelocity(topAngularVel);
     bottom.body.setAngularVelocity(bottomAngularVel);
     console.log("Angular Velocity:", {
@@ -1227,14 +1303,17 @@ export class MainScene extends Phaser.Scene {
       allSplatters.push(spray);
     }
 
-    // Animation — fade out after 1-2 seconds
+    // Animation — fade out after configured delay
     allSplatters.forEach((splatter) => {
-      const fadeDelay = Phaser.Math.Between(1000, 2000);
+      const fadeDelay = Phaser.Math.Between(
+        this.config.effects.juice.fadeDelayMin,
+        this.config.effects.juice.fadeDelayMax
+      );
       this.time.delayedCall(fadeDelay, () => {
         this.tweens.add({
           targets: splatter,
           alpha: 0,
-          duration: 300,
+          duration: this.config.effects.juice.fadeDuration,
           onComplete: () => splatter.destroy()
         });
       });
@@ -1289,8 +1368,8 @@ export class MainScene extends Phaser.Scene {
     const endPoint = points[points.length - 1];
     
     // Blade dimensions - wider at front (end), sharp at back (start)
-    const baseWidth = 15; // Width at the front (end of swipe)
-    const tipWidth = 1; // Width at the back (start of swipe - sharp tip)
+    const baseWidth = this.config.effects.trail.baseWidth;
+    const tipWidth = this.config.effects.trail.tipWidth;
     
     // Create blade shape - sharp white blade
     this.trailGraphics.fillStyle(0xffffff, 0.95); // Pure white, slightly transparent
@@ -1367,52 +1446,9 @@ export class MainScene extends Phaser.Scene {
     this.trailGraphics.strokePath();
   }
 
+  // Spawn fruit is now handled by FruitSpawner class
+  // This method is kept for backward compatibility but delegates to spawner
   spawnFruit(gameObjectName, spawnX, width, height) {
-    // Calculate responsive spawn position (near bottom, but not too close)
-    const spawnY = height; // 15% from bottom
-
-    const fruit = this.physics.add.sprite(spawnX, spawnY, gameObjectName);
-
-    // Use responsive scale
-    fruit.setScale(this.fruitScale);
-    fruit.setDepth(10); // Fruits above juice splatters
-    this.fruits.add(fruit);
-
-    // Calculate direction toward center
-    const centerX = width / 2;
-    const distanceToCenter = centerX - spawnX;
-
-    // Responsive velocity based on screen height
-    // Base velocities for 1080p height, scale proportionally
-    const baseHeight = 1080;
-    const velocityScale = height / baseHeight;
-
-    // Scale velocities to screen size
-    const minUpwardVelocity = -400 * velocityScale;
-    const maxUpwardVelocity = -700 * velocityScale;
-    const upwardVelocity = Phaser.Math.Between(
-      minUpwardVelocity,
-      maxUpwardVelocity
-    );
-
-    // Calculate horizontal velocity to move toward center
-    // The further from center, the stronger the pull toward center
-    const maxHorizontalSpeed = Math.abs(upwardVelocity) * 0.4; // 40% of upward speed
-    const normalizedDistance = Math.abs(distanceToCenter) / (width / 2); // 0 to 1
-    const horizontalSpeed = maxHorizontalSpeed * normalizedDistance;
-
-    // Direction: positive = right, negative = left
-    const xVelocity =
-      distanceToCenter > 0
-        ? horizontalSpeed // Moving right toward center
-        : -horizontalSpeed; // Moving left toward center
-
-    fruit.setVelocity(xVelocity, upwardVelocity);
-
-    // Responsive angular velocity
-    const angularVelocityScale = velocityScale;
-    const minAngular = -200 * angularVelocityScale;
-    const maxAngular = 200 * angularVelocityScale;
-    fruit.setAngularVelocity(Phaser.Math.Between(minAngular, maxAngular));
+    this.fruitSpawner.spawnFruit(gameObjectName, spawnX, width, height);
   }
 }
