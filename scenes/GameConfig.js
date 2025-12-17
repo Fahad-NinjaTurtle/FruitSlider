@@ -10,13 +10,23 @@ export class GameConfig {
       minSpawnX: 50,
       maxSpawnXOffset: 50, // Offset from screen edges
       fruitTypes: ["waterMelon", "apple", "peach", "pear", "bomb"],
+      
+      // Multi-fruit spawn settings
+      multiFruit: {
+        enabled: true, // Enable multi-fruit spawns
+        probability: 0.3, // 30% chance of multi-fruit spawn (0.0 to 1.0)
+        minFruits: 2, // Minimum fruits in multi-fruit spawn
+        maxFruits: 5, // Maximum fruits in multi-fruit spawn (changed from 4 to 5)
+        spawnSpread: 150, // Horizontal spread between fruits (pixels)
+        timeBetweenMulti: 5000, // Minimum time between multi-fruit spawns (ms)
+      },
     };
 
     // Fruit physics configuration
     this.fruit = {
       // Velocity ranges (base values, will be scaled responsively)
-      minUpwardVelocity: -400,
-      maxUpwardVelocity: -700,
+      minUpwardVelocity: -450, // Reduced from -500 to prevent going above screen
+      maxUpwardVelocity: -700, // Reduced from -850 to prevent going above screen
       horizontalSpeedMultiplier: 0.4, // Percentage of upward velocity
       
       // Angular velocity
@@ -25,10 +35,10 @@ export class GameConfig {
       
       // Scale configuration
       baseHeight: 1080, // Reference height for scaling
-      mobileBaseScale: 0.2,
+      mobileBaseScale: 0.28, // Reduced from 0.35 - smaller fruits on mobile
       desktopBaseScale: 0.3,
-      minScale: 0.15,
-      maxScale: 0.35,
+      minScale: 0.2, // Reduced from 0.25
+      maxScale: 0.35, // Reduced from 0.45
       
       // Gravity for sliced halves
       slicedGravity: 1200,
@@ -41,6 +51,16 @@ export class GameConfig {
     this.game = {
       maxMisses: 3,
       bestScoreKey: 'fruitNinjaBestScore',
+    };
+
+    // Combo system configuration
+    this.combo = {
+      enabled: true, // Enable combo system
+      timeWindow: 200, // Time window for combo (ms) - fruits sliced within 0.2 seconds count as combo
+      minCombo: 2, // Minimum fruits for combo (2 = double, 3 = triple, etc.)
+      bonusMultiplier: 0.5, // Bonus points multiplier (0.5 = 50% extra per fruit in combo)
+      displayDuration: 1500, // How long to show combo text (ms)
+      fontSize: 48, // Combo text font size
     };
 
     // UI configuration

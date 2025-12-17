@@ -85,6 +85,12 @@ export class MainScene extends Phaser.Scene {
     this.maxMisses = this.config.game.maxMisses;
     this.gameOver = false;
     
+    // Combo system state
+    this.comboCount = 0; // Current combo count
+    this.lastSliceTime = 0; // Time of last fruit slice
+    this.comboText = null; // Combo display text object
+    this.comboTimer = null; // Timer to reset combo
+    
     // Load best score from localStorage
     this.bestScore = parseInt(
       localStorage.getItem(this.config.game.bestScoreKey) || '0', 
@@ -299,6 +305,18 @@ export class MainScene extends Phaser.Scene {
     this.score = 0;
     this.misses = 0;
     
+    // Reset combo system
+    this.comboCount = 0;
+    this.lastSliceTime = 0;
+    if (this.comboTimer) {
+      this.comboTimer.remove();
+      this.comboTimer = null;
+    }
+    if (this.comboText) {
+      this.comboText.destroy();
+      this.comboText = null;
+    }
+    
     // Reload best score
     this.bestScore = parseInt(
       localStorage.getItem(this.config.game.bestScoreKey) || '0', 
@@ -363,6 +381,87 @@ export class MainScene extends Phaser.Scene {
     });
   }
 
+  // Show combo text when combo is achieved
+  showComboText(comboCount, bonusScore) {
+    const width = this.cameras.main.width;
+    const height = this.cameras.main.height;
+    
+    // Remove previous combo text if exists
+    if (this.comboText) {
+      this.comboText.destroy();
+    }
+    
+    // Create combo text
+    const comboLabel = comboCount >= this.config.combo.minCombo 
+      ? `${comboCount}x COMBO!` 
+      : '';
+    
+    if (comboLabel) {
+      this.comboText = this.add.text(
+        width / 2,
+        height * 0.3, // Top third of screen
+        comboLabel,
+        {
+          fontSize: `${this.config.combo.fontSize}px`,
+          fill: '#ffd700', // Gold color
+          stroke: '#000000',
+          strokeThickness: 6,
+          fontFamily: 'Arial',
+          fontStyle: 'bold',
+          align: 'center'
+        }
+      ).setOrigin(0.5).setDepth(200);
+      
+      // Add bonus score text below combo
+      const bonusText = this.add.text(
+        width / 2,
+        height * 0.3 + this.config.combo.fontSize + 10,
+        `+${bonusScore} Bonus!`,
+        {
+          fontSize: `${this.config.combo.fontSize * 0.6}px`,
+          fill: '#ffff00', // Yellow
+          stroke: '#000000',
+          strokeThickness: 4,
+          fontFamily: 'Arial',
+          fontStyle: 'bold',
+          align: 'center'
+        }
+      ).setOrigin(0.5).setDepth(200);
+      
+      // Animation - scale up and fade out
+      this.comboText.setAlpha(0);
+      this.comboText.setScale(0.5);
+      bonusText.setAlpha(0);
+      bonusText.setScale(0.5);
+      
+      // Fade in and scale up
+      this.tweens.add({
+        targets: [this.comboText, bonusText],
+        alpha: 1,
+        scale: 1.2,
+        duration: 200,
+        ease: 'Back.easeOut'
+      });
+      
+      // Then fade out and scale down
+      this.tweens.add({
+        targets: [this.comboText, bonusText],
+        alpha: 0,
+        scale: 0.8,
+        duration: 300,
+        delay: this.config.combo.displayDuration - 500,
+        ease: 'Power2',
+        onComplete: () => {
+          if (this.comboText) {
+            this.comboText.destroy();
+            this.comboText = null;
+          }
+          bonusText.destroy();
+        }
+      });
+    }
+  }
+
   // Show game over text (called after bomb explosion)
   showGameOverText() {
     const width = this.cameras.main.width;
@@ -398,10 +497,11 @@ export class MainScene extends Phaser.Scene {
 
   // End game function with parchment-style panel
   endGame(reason) {
-    // if (this.gameOver) {
-    //   console.log('⚠️ endGame called but game already over');
-    //   return; // Already ended
-    // }
+    // Prevent multiple game over panels/sounds
+    if (this.gameOver) {
+      console.log('⚠️ endGame called but game already over');
+      return; // Already ended
+    }
     
     console.log('🎮 endGame called:', reason);
     this.gameOver = true;
@@ -429,6 +529,16 @@ export class MainScene extends Phaser.Scene {
     if (this.trailGraphics) {
       this.trailGraphics.clear();
       this.trailGraphics.alpha = 0;
+    }
+    
+    // Clean up combo system
+    if (this.comboTimer) {
+      this.comboTimer.remove();
+      this.comboTimer = null;
+    }
+    if (this.comboText) {
+      this.comboText.destroy();
+      this.comboText = null;
     }
     
     // Update best score
@@ -745,13 +855,14 @@ export class MainScene extends Phaser.Scene {
         console.log("fruit destroyed ", fruit.texture.key);
         
         // Check if it's a bomb (bombs don't count as misses)
-        if (fruit.texture.key !== 'bomb') {
+        if (fruit.texture.key !== 'bomb' && !this.gameOver) {
           // Play miss sound for each missed fruit
           this.sound.play("sfxMissFruit", { volume: 0.7 });
 
           this.misses++;
           this.updateUI();
           
+          // Check if we hit max misses - endGame will prevent multiple calls
           if (this.misses >= this.config.game.maxMisses) {
             this.endGame('You missed 3 fruits!');
           }
@@ -865,7 +976,7 @@ export class MainScene extends Phaser.Scene {
     // Check if bomb was sliced - create explosion effect then game over!
     if (key === 'bomb') {
       // Immediately mark game over so no more fruits can be sliced in the same swipe/update
-      this.gameOver = true;
+      // this.gameOver = true;
 
       const bombX = fruit.x;
       const bombY = fruit.y;
@@ -891,8 +1002,49 @@ export class MainScene extends Phaser.Scene {
       return;
     }
     
-    // Increment score for slicing fruits
-    this.score++;
+    // Combo system - check if this slice is part of a combo
+    const now = this.time.now;
+    const timeSinceLastSlice = now - this.lastSliceTime;
+    const comboConfig = this.config.combo;
+    
+    if (comboConfig.enabled && timeSinceLastSlice <= comboConfig.timeWindow) {
+      // Continue combo
+      this.comboCount++;
+      
+      // Calculate bonus score (base score + combo bonus)
+      const baseScore = 1;
+      const comboBonus = Math.floor(baseScore * comboConfig.bonusMultiplier * this.comboCount);
+      const totalScore = baseScore + comboBonus;
+      
+      this.score += totalScore;
+      
+      // Show combo text
+      this.showComboText(this.comboCount + 1, totalScore); // +1 because comboCount starts at 0
+      
+      // Reset combo timer
+      if (this.comboTimer) {
+        this.comboTimer.remove();
+      }
+      this.comboTimer = this.time.delayedCall(comboConfig.timeWindow, () => {
+        this.comboCount = 0;
+        this.comboTimer = null;
+      });
+    } else {
+      // Start new combo or single slice
+      this.comboCount = 1;
+      this.score++;
+      
+      // Reset combo timer
+      if (this.comboTimer) {
+        this.comboTimer.remove();
+      }
+      this.comboTimer = this.time.delayedCall(comboConfig.timeWindow, () => {
+        this.comboCount = 0;
+        this.comboTimer = null;
+      });
+    }
+    
+    this.lastSliceTime = now;
     this.updateUI();
 
     // Play fruit slice splatter sound
