@@ -10,7 +10,7 @@ export class GameConfig {
       minSpawnX: 50,
       maxSpawnXOffset: 50, // Offset from screen edges
       fruitTypes: ["waterMelon", "apple", "peach", "pear", "bomb"],
-      
+
       // Multi-fruit spawn settings
       multiFruit: {
         enabled: true, // Enable multi-fruit spawns
@@ -28,18 +28,18 @@ export class GameConfig {
       minUpwardVelocity: -450, // Reduced from -500 to prevent going above screen
       maxUpwardVelocity: -700, // Reduced from -850 to prevent going above screen
       horizontalSpeedMultiplier: 0.4, // Percentage of upward velocity
-      
+
       // Angular velocity
       minAngularVelocity: -200,
       maxAngularVelocity: 200,
-      
+
       // Scale configuration
       baseHeight: 1080, // Reference height for scaling
       mobileBaseScale: 0.28, // Reduced from 0.35 - smaller fruits on mobile
       desktopBaseScale: 0.3,
       minScale: 0.2, // Reduced from 0.25
       maxScale: 0.35, // Reduced from 0.45
-      
+
       // Gravity for sliced halves
       slicedGravity: 1200,
       slicedAngularVelocityMin: 80,
@@ -50,7 +50,7 @@ export class GameConfig {
     // Game rules
     this.game = {
       maxMisses: 3,
-      bestScoreKey: 'fruitNinjaBestScore',
+      bestScoreKey: "fruitNinjaBestScore",
     };
 
     // Combo system configuration
@@ -100,11 +100,19 @@ export class GameConfig {
    */
   getScaleFactor(height, isMobile) {
     const scaleFactor = height / this.fruit.baseHeight;
-    const baseScale = isMobile 
-      ? this.fruit.mobileBaseScale 
+    const baseScale = isMobile
+      ? this.fruit.mobileBaseScale
       : this.fruit.desktopBaseScale;
     const scaled = baseScale * scaleFactor;
-    return Phaser.Math.Clamp(scaled, this.fruit.minScale, this.fruit.maxScale);
+    // return Phaser.Math.Clamp(scaled, this.fruit.minScale, this.fruit.maxScale);
+    const clamped = Phaser.Math.Clamp(
+      scaled,
+      this.fruit.minScale,
+      this.fruit.maxScale
+    );
+
+    // QUANTIZE scale to avoid sub-pixel resampling
+    return Math.round(clamped * 100) / 100;
   }
 
   /**
@@ -114,4 +122,3 @@ export class GameConfig {
     return height / this.fruit.baseHeight;
   }
 }
-

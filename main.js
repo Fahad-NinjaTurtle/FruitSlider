@@ -2,7 +2,10 @@ import { MainScene } from "./scenes/MainScene.js";
 import { SliceTestScene } from "./scripts/SliceTestScene.js";
 
 // Detect if mobile device
-const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+const isMobile =
+  /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
+    navigator.userAgent
+  );
 
 // Get actual screen dimensions
 const screenWidth = window.innerWidth;
@@ -16,45 +19,49 @@ const gravityScale = screenHeight / baseHeight;
 const responsiveGravity = baseGravity * gravityScale;
 
 const config = {
-    type: Phaser.AUTO,
-    width: screenWidth,
-    height: screenHeight,
-    backgroundColor: '#222',
-    // High DPR support for crisp graphics on retina/high DPR screens
-    // Cap DPR at 4x to prevent performance issues on extreme high-DPI devices
-    resolution: Math.min(window.devicePixelRatio || 1, 4),
-    antialias: true, // Enable antialiasing for smoother edges
-    pixelArt: false, // Set to false to allow smooth scaling (not pixel art style)
-    physics: {
-        default: "arcade",
-        arcade: {
-            gravity: { y: responsiveGravity },
-            debug: false
-        }
+  type: Phaser.AUTO,
+  width: screenWidth,
+  height: screenHeight,
+  backgroundColor: "#222",
+  // High DPR support for crisp graphics on retina/high DPR screens
+  // Cap DPR at 4x to prevent performance issues on extreme high-DPI devices
+  resolution: Math.min(window.devicePixelRatio || 1, 4),
+  antialias: true, // Enable antialiasing for smoother edges
+  pixelArt: false, // Set to false to allow smooth scaling (not pixel art style)
+  physics: {
+    default: "arcade",
+    arcade: {
+      gravity: { y: responsiveGravity },
+      debug: false,
     },
-    plugins: {
-        global: [
-            {
-                key: 'RawgesturePlugin',
-                plugin: Phaser.Plugins.RawgesturePlugin,
-                start: true
-            }
-        ]
-    },
-    scene: MainScene,
-    scale: {
-        mode: Phaser.Scale.RESIZE,
-        autoCenter: Phaser.Scale.CENTER_BOTH,
-        width: '100%',
-        height: '100%'
-    },
-    render: {
-        // Enable high DPR rendering
-        antialias: true,
-        pixelArt: false,
-        roundPixels: true, // Round pixels for crisp rendering on high-DPI displays
-        powerPreference: "high-performance" // Use high-performance GPU if available
-    }
+  },
+  plugins: {
+    global: [
+      {
+        key: "RawgesturePlugin",
+        plugin: Phaser.Plugins.RawgesturePlugin,
+        start: true,
+      },
+    ],
+  },
+  scene: MainScene,
+  // scale: {
+  //     mode: Phaser.Scale.RESIZE,
+  //     autoCenter: Phaser.Scale.CENTER_BOTH,
+  //     width: '100%',
+  //     height: '100%'
+  // },
+  scale: {
+    mode: Phaser.Scale.NONE,
+  },
+
+  render: {
+    // Enable high DPR rendering
+    antialias: true,
+    pixelArt: false,
+    roundPixels: false, // Round pixels for crisp rendering on high-DPI displays
+    powerPreference: "high-performance", // Use high-performance GPU if available
+  },
 };
 
 const game = new Phaser.Game(config);
@@ -63,16 +70,16 @@ const game = new Phaser.Game(config);
 window.gameInstance = game;
 
 // Handle window resize
-window.addEventListener('resize', () => {
-    game.scale.refresh();
+window.addEventListener("resize", () => {
+  game.scale.resize(window.innerWidth, window.innerHeight);
 });
 
 // Lock orientation on mobile
 if (isMobile) {
-    // Try to lock orientation (may not work on all browsers)
-    if (screen.orientation && screen.orientation.lock) {
-        screen.orientation.lock('landscape').catch(err => {
-            console.log('Orientation lock failed:', err);
-        });
-    }
+  // Try to lock orientation (may not work on all browsers)
+  if (screen.orientation && screen.orientation.lock) {
+    screen.orientation.lock("landscape").catch((err) => {
+      console.log("Orientation lock failed:", err);
+    });
+  }
 }
