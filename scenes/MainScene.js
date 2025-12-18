@@ -33,6 +33,16 @@ export class MainScene extends Phaser.Scene {
     const width = this.cameras.main.width;
     const height = this.cameras.main.height;
 
+    // Apply LINEAR texture filtering to all textures to prevent pixelation on mobile
+    // This enables smooth scaling on high-DPI displays
+    const textureKeys = ["waterMelon", "apple", "peach", "pear", "bomb", "background", "trail", "cross"];
+    textureKeys.forEach(key => {
+      const texture = this.textures.get(key);
+      if (texture) {
+        texture.setFilter(Phaser.Textures.FilterMode.LINEAR);
+      }
+    });
+
     // Store dimensions for responsive calculations
     this.gameWidth = width;
     this.gameHeight = height;

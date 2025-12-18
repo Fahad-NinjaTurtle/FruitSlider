@@ -21,7 +21,8 @@ const config = {
     height: screenHeight,
     backgroundColor: '#222',
     // High DPR support for crisp graphics on retina/high DPR screens
-    resolution: window.devicePixelRatio || 1,
+    // Cap DPR at 4x to prevent performance issues on extreme high-DPI devices
+    resolution: Math.min(window.devicePixelRatio || 1, 4),
     antialias: true, // Enable antialiasing for smoother edges
     pixelArt: false, // Set to false to allow smooth scaling (not pixel art style)
     physics: {
@@ -51,7 +52,7 @@ const config = {
         // Enable high DPR rendering
         antialias: true,
         pixelArt: false,
-        roundPixels: false, // Allow sub-pixel rendering for smoother movement
+        roundPixels: true, // Round pixels for crisp rendering on high-DPI displays
         powerPreference: "high-performance" // Use high-performance GPU if available
     }
 };
