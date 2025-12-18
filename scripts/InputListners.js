@@ -100,15 +100,13 @@ startBtn.addEventListener("click", async (e) => {
         // Game continues even if fullscreen fails
     }
     
-    // Hide start panel and button
+    // Hide start panel, logo, and button
     startPanel.style.display = "none";
-    startBtn.style.display = "none";
-    
-    // Hide orientation message
-    const orientationMessage = document.getElementById("orientationMessage");
-    if (orientationMessage) {
-        orientationMessage.classList.remove('show');
+    const logoImage = document.getElementById("logoImage");
+    if (logoImage) {
+        logoImage.style.display = "none";
     }
+    startBtn.style.display = "none";
     
     // Lock orientation to landscape (mobile)
     lockOrientation();

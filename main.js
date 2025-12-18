@@ -20,6 +20,10 @@ const config = {
     width: screenWidth,
     height: screenHeight,
     backgroundColor: '#222',
+    // High DPR support for crisp graphics on retina/high DPR screens
+    resolution: window.devicePixelRatio || 1,
+    antialias: true, // Enable antialiasing for smoother edges
+    pixelArt: false, // Set to false to allow smooth scaling (not pixel art style)
     physics: {
         default: "arcade",
         arcade: {
@@ -38,10 +42,17 @@ const config = {
     },
     scene: MainScene,
     scale: {
-        mode: Phaser.Scale.RESIZE,
-        autoCenter: Phaser.Scale.CENTER_BOTH,
+        // mode: Phaser.Scale.RESIZE,
+        autoCenter: Phaser.Scale.NO_CENTER,
         width: '100%',
         height: '100%'
+    },
+    render: {
+        // Enable high DPR rendering
+        antialias: true,
+        pixelArt: false,
+        roundPixels: false, // Allow sub-pixel rendering for smoother movement
+        powerPreference: "high-performance" // Use high-performance GPU if available
     }
 };
 

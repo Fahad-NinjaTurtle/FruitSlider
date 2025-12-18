@@ -305,6 +305,12 @@ export class MainScene extends Phaser.Scene {
     this.score = 0;
     this.misses = 0;
     
+    // Hide game over panel if visible
+    const gameOverPanel = document.getElementById('gameOverPanel');
+    if (gameOverPanel) {
+      gameOverPanel.classList.add('hidden');
+    }
+    
     // Reset combo system
     this.comboCount = 0;
     this.lastSliceTime = 0;
@@ -553,231 +559,93 @@ export class MainScene extends Phaser.Scene {
     // Stop fruit spawning
     this.fruitSpawner.stop();
     
-    const width = this.cameras.main.width;
-    const height = this.cameras.main.height;
-    
     // Remove game over text if it exists (from bomb explosion) - do it immediately
     if (this.gameOverTextObj) {
       this.gameOverTextObj.destroy();
       this.gameOverTextObj = null;
     }
     
-    console.log('📋 Creating game over panel...');
+    console.log('📋 Showing HTML game over panel...');
     
-    // Create dark overlay (above white flash if it exists)
-    const overlay = this.add.graphics();
-    overlay.fillStyle(0x000000, 0.7);
-    overlay.fillRect(0, 0, width, height);
-    overlay.setDepth(260); // Above white flash (250) and game over text (251)
+    // Show HTML-based game over panel
+    const gameOverPanel = document.getElementById('gameOverPanel');
+    const finalScoreElement = document.getElementById('finalScore');
     
-    // Create parchment scroll background (responsive to screen size)
-    const isMobile =
-      /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
-        navigator.userAgent
-      );
-
-    // Panel scale based on height (mobile vs PC)
-    const panelBaseHeight = isMobile ? 720 : 900;
-    const panelScale = Phaser.Math.Clamp(height / panelBaseHeight, 0.7, 1.1);
-
-    const scrollWidth = Math.min(width * 0.8, 520 * panelScale);
-    const scrollHeight = Math.min(height * 0.55, 360 * panelScale);
-    const scrollX = width / 2;
-    const scrollY = height / 2 - 50;
+    console.log('Game over panel element:', gameOverPanel);
+    console.log('Final score element:', finalScoreElement);
     
-    const scroll = this.add.graphics();
-    scroll.fillStyle(0xd4a574, 1); // Parchment color
-    scroll.fillRoundedRect(scrollX - scrollWidth/2, scrollY - scrollHeight/2, scrollWidth, scrollHeight, 10);
-    scroll.lineStyle(3, 0x8b6914, 1); // Dark brown border
-    scroll.strokeRoundedRect(scrollX - scrollWidth/2, scrollY - scrollHeight/2, scrollWidth, scrollHeight, 10);
-    
-    // Add decorative corners (X-shaped fastenings)
-    const cornerSize = 15;
-    const corners = [
-      { x: scrollX - scrollWidth/2 + 20, y: scrollY - scrollHeight/2 + 20 },
-      { x: scrollX + scrollWidth/2 - 20, y: scrollY - scrollHeight/2 + 20 },
-      { x: scrollX - scrollWidth/2 + 20, y: scrollY + scrollHeight/2 - 20 },
-      { x: scrollX + scrollWidth/2 - 20, y: scrollY + scrollHeight/2 - 20 }
-    ];
-    
-    corners.forEach(corner => {
-      scroll.lineStyle(2, 0x8b6914, 1);
-      scroll.beginPath();
-      scroll.moveTo(corner.x - cornerSize, corner.y - cornerSize);
-      scroll.lineTo(corner.x + cornerSize, corner.y + cornerSize);
-      scroll.moveTo(corner.x + cornerSize, corner.y - cornerSize);
-      scroll.lineTo(corner.x - cornerSize, corner.y + cornerSize);
-      scroll.strokePath();
-    });
-    
-    scroll.setDepth(301); // Above overlay (300)
-    
-    // SCORE text (golden yellow) - responsive
-    const titleFontSize = 40 * panelScale;
-    const scoreLabelText = this.add.text(
-      scrollX,
-      scrollY - scrollHeight / 2 + scrollHeight * 0.18,
-      'SCORE',
-      {
-        fontSize: titleFontSize,
-        fill: '#ffd700',
-        stroke: '#8b6914',
-        strokeThickness: 4,
-        fontFamily: 'Arial',
-        fontStyle: 'bold'
+    if (gameOverPanel && finalScoreElement) {
+      // Update score
+      finalScoreElement.textContent = this.score;
+      
+      // Check if we're in fullscreen mode
+      const fullscreenElement = document.fullscreenElement || 
+                                document.webkitFullscreenElement || 
+                                document.mozFullScreenElement || 
+                                document.msFullscreenElement;
+      
+      // If in fullscreen, append panel to fullscreen element
+      if (fullscreenElement && fullscreenElement !== gameOverPanel.parentElement) {
+        fullscreenElement.appendChild(gameOverPanel);
+        console.log('Panel appended to fullscreen element');
       }
-    ).setOrigin(0.5).setDepth(302);
-    
-    // Score number (large, golden yellow) - responsive
-    const scoreFontSize = 70 * panelScale;
-    const scoreNumberText = this.add.text(
-      scrollX,
-      scrollY - scrollHeight * 0.02,
-      `${this.score}`,
-      {
-        fontSize: scoreFontSize,
-        fill: '#ffd700',
-        stroke: '#8b6914',
-        strokeThickness: 5,
-        fontFamily: 'Arial',
-        fontStyle: 'bold'
+      
+      // Show panel - remove hidden class and ensure it's visible
+      gameOverPanel.classList.remove('hidden');
+      gameOverPanel.style.display = 'flex';
+      gameOverPanel.style.visibility = 'visible';
+      gameOverPanel.style.opacity = '1';
+      gameOverPanel.style.position = 'fixed';
+      gameOverPanel.style.zIndex = '99999';
+      gameOverPanel.style.top = '0';
+      gameOverPanel.style.left = '0';
+      gameOverPanel.style.width = '100vw';
+      gameOverPanel.style.height = '100vh';
+      
+      console.log('Panel should be visible now', {
+        fullscreen: !!fullscreenElement,
+        parent: gameOverPanel.parentElement
+      });
+      
+      // Setup button handlers (only once)
+      if (!this.gameOverButtonsSetup) {
+        const retryBtn = document.getElementById('retryBtn');
+        const quitBtn = document.getElementById('quitBtn');
+        
+        if (retryBtn) {
+          retryBtn.addEventListener('click', () => {
+            // Hide panel
+            gameOverPanel.classList.add('hidden');
+            
+            // Set flag to auto-start after restart
+            if (!this.scene.settings.data) {
+              this.scene.settings.data = {};
+            }
+            this.scene.settings.data.autoStart = true;
+            this.scene.restart();
+          });
+        }
+        
+        if (quitBtn) {
+          quitBtn.addEventListener('click', () => {
+            // Exit fullscreen if active
+            if (document.exitFullscreen) {
+              document.exitFullscreen();
+            } else if (document.webkitExitFullscreen) {
+              document.webkitExitFullscreen();
+            } else if (document.mozCancelFullScreen) {
+              document.mozCancelFullScreen();
+            } else if (document.msExitFullscreen) {
+              document.msExitFullscreen();
+            }
+            // Reload page to go back to start screen
+            window.location.reload();
+          });
+        }
+        
+        this.gameOverButtonsSetup = true;
       }
-    ).setOrigin(0.5).setDepth(302);
-    
-    // RETRY button (blue circle with apple) - responsive
-    const retryButtonRadius = scrollHeight * 0.22;
-    const retryButtonX = scrollX - scrollWidth/4;
-    const retryButtonY = scrollY + scrollHeight * 0.22;
-    
-    const retryButton = this.add.graphics();
-    retryButton.fillStyle(0x0066cc, 1); // Blue
-    retryButton.fillCircle(retryButtonX, retryButtonY, retryButtonRadius);
-    retryButton.lineStyle(4, 0x000000, 1);
-    retryButton.strokeCircle(retryButtonX, retryButtonY, retryButtonRadius);
-    retryButton.setDepth(302);
-    
-    // Apple icon in retry button - responsive scale
-    const appleIcon = this.add.image(retryButtonX, retryButtonY, 'apple');
-    appleIcon.setScale(0.35 * panelScale);
-    appleIcon.setDepth(303);
-    
-    // RETRY text around button
-    const retryText = this.add.text(
-      retryButtonX,
-      retryButtonY - retryButtonRadius - 10 * panelScale,
-      'RETRY',
-      {
-        fontSize: 22 * panelScale,
-        fill: '#ffffff',
-        stroke: '#000000',
-        strokeThickness: 3,
-        fontFamily: 'Arial',
-        fontStyle: 'bold'
-      }
-    ).setOrigin(0.5).setDepth(302);
-    
-    // QUIT button (red circle with bomb) - responsive
-    const quitButtonRadius = scrollHeight * 0.22;
-    const quitButtonX = scrollX + scrollWidth/4;
-    const quitButtonY = retryButtonY;
-    
-    const quitButton = this.add.graphics();
-    quitButton.fillStyle(0xcc0000, 1); // Red
-    quitButton.fillCircle(quitButtonX, quitButtonY, quitButtonRadius);
-    quitButton.lineStyle(4, 0x000000, 1);
-    quitButton.strokeCircle(quitButtonX, quitButtonY, quitButtonRadius);
-    quitButton.setDepth(302);
-    
-    // Bomb icon in quit button - responsive scale
-    const bombIcon = this.add.image(quitButtonX, quitButtonY, 'bomb');
-    bombIcon.setScale(0.32 * panelScale);
-    bombIcon.setDepth(303);
-    
-    // QUIT text around button
-    const quitText = this.add.text(
-      quitButtonX,
-      quitButtonY - quitButtonRadius - 10 * panelScale,
-      'QUIT',
-      {
-        fontSize: 22 * panelScale,
-        fill: '#ffffff',
-        stroke: '#000000',
-        strokeThickness: 3,
-        fontFamily: 'Arial',
-        fontStyle: 'bold'
-      }
-    ).setOrigin(0.5).setDepth(302);
-    
-    // Make buttons interactive using Phaser zones
-    const retryZone = this.add.zone(retryButtonX, retryButtonY, retryButtonRadius * 2, retryButtonRadius * 2);
-    retryZone.setInteractive();
-    retryZone.setDepth(304);
-    
-    const quitZone = this.add.zone(quitButtonX, quitButtonY, quitButtonRadius * 2, quitButtonRadius * 2);
-    quitZone.setInteractive();
-    quitZone.setDepth(304);
-    
-    // Store button references for cleanup
-    this.gameOverButtons = { retryZone, quitZone };
-    
-    // Retry button click handler
-    retryZone.on('pointerdown', () => {
-      // Set flag to auto-start after restart
-      if (!this.scene.settings.data) {
-        this.scene.settings.data = {};
-      }
-      this.scene.settings.data.autoStart = true;
-      this.scene.restart();
-    });
-    
-    // Quit button click handler
-    quitZone.on('pointerdown', () => {
-      // Exit fullscreen if active
-      if (document.exitFullscreen) {
-        document.exitFullscreen();
-      } else if (document.webkitExitFullscreen) {
-        document.webkitExitFullscreen();
-      } else if (document.mozCancelFullScreen) {
-        document.mozCancelFullScreen();
-      } else if (document.msExitFullscreen) {
-        document.msExitFullscreen();
-      }
-      // Reload page to go back to start screen
-      window.location.reload();
-    });
-    
-    // Add hover effects
-    retryZone.on('pointerover', () => {
-      retryButton.clear();
-      retryButton.fillStyle(0x0088ff, 1); // Lighter blue on hover
-      retryButton.fillCircle(retryButtonX, retryButtonY, retryButtonRadius);
-      retryButton.lineStyle(4, 0x000000, 1);
-      retryButton.strokeCircle(retryButtonX, retryButtonY, retryButtonRadius);
-    });
-    
-    retryZone.on('pointerout', () => {
-      retryButton.clear();
-      retryButton.fillStyle(0x0066cc, 1); // Original blue
-      retryButton.fillCircle(retryButtonX, retryButtonY, retryButtonRadius);
-      retryButton.lineStyle(4, 0x000000, 1);
-      retryButton.strokeCircle(retryButtonX, retryButtonY, retryButtonRadius);
-    });
-    
-    quitZone.on('pointerover', () => {
-      quitButton.clear();
-      quitButton.fillStyle(0xff0000, 1); // Lighter red on hover
-      quitButton.fillCircle(quitButtonX, quitButtonY, quitButtonRadius);
-      quitButton.lineStyle(4, 0x000000, 1);
-      quitButton.strokeCircle(quitButtonX, quitButtonY, quitButtonRadius);
-    });
-    
-    quitZone.on('pointerout', () => {
-      quitButton.clear();
-      quitButton.fillStyle(0xcc0000, 1); // Original red
-      quitButton.fillCircle(quitButtonX, quitButtonY, quitButtonRadius);
-      quitButton.lineStyle(4, 0x000000, 1);
-      quitButton.strokeCircle(quitButtonX, quitButtonY, quitButtonRadius);
-    });
+    }
 
     console.log(`🎮 Game Over: ${reason} | Final Score: ${this.score} | Best: ${this.bestScore}`);
   }
