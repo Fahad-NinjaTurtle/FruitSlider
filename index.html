@@ -189,6 +189,19 @@
         z-index: 100 !important;
       }
 
+      /* Ensure pause panel works in fullscreen */
+      :fullscreen #pausePanel,
+      :-webkit-full-screen #pausePanel,
+      :-moz-full-screen #pausePanel,
+      :-ms-fullscreen #pausePanel {
+        position: fixed !important;
+        top: 0 !important;
+        left: 0 !important;
+        width: 100vw !important;
+        height: 100vh !important;
+        z-index: 200 !important;
+      }
+
       /* Score Box */
       #scoreBox {
         position: absolute;
@@ -249,13 +262,128 @@
         display: none;
       }
 
+      /* Pause Button */
+      #pauseBtn {
+        position: absolute;
+        bottom: 20px; /* Changed from top to bottom */
+        right: 20px;
+        width: 60px;
+        height: 60px;
+        background-color: rgba(0, 0, 0, 0.6);
+        border: 3px solid #ffffff;
+        border-radius: 50%;
+        display: none; /* Hidden by default, shown when game starts */
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        z-index: 150;
+        pointer-events: auto;
+        transition: all 0.2s ease;
+      }
+
+      #pauseBtn:hover {
+        background-color: rgba(0, 0, 0, 0.8);
+        transform: scale(1.1);
+      }
+
+      #pauseBtn:active {
+        transform: scale(0.95);
+      }
+
+      #pauseBtn.paused {
+        background-color: rgba(255, 0, 0, 0.7);
+      }
+
+      /* Pause Icon (two vertical bars) - standard pause icon */
+      .pause-icon {
+        display: flex;
+        gap: 6px;
+        align-items: center;
+        justify-content: center;
+        width: 100%;
+        height: 100%;
+      }
+
+      .pause-icon::before,
+      .pause-icon::after {
+        content: '';
+        width: 8px;
+        height: 24px;
+        background-color: #ffffff;
+        border-radius: 2px;
+      }
+
+      /* Resume Icon (play triangle) */
+      .resume-icon {
+        width: 0;
+        height: 0;
+        border-left: 20px solid #ffffff;
+        border-top: 12px solid transparent;
+        border-bottom: 12px solid transparent;
+        margin-left: 4px;
+        display: none;
+      }
+
+      #pauseBtn.paused .pause-icon {
+        display: none;
+      }
+
+      #pauseBtn.paused .resume-icon {
+        display: block;
+      }
+
+      /* Pause Panel Overlay */
+      #pausePanel {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(0, 0, 0, 0.7);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        z-index: 200;
+        pointer-events: auto;
+      }
+
+      #pausePanel.visible {
+        display: flex;
+      }
+
+      .pause-panel-content {
+        background-color: #d4a574; /* Parchment beige - same as retry panel */
+        border: 4px solid #8b6914; /* Dark brown border - same as retry panel */
+        border-radius: 20px;
+        padding: 40px 60px;
+        text-align: center;
+        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+        min-width: 300px;
+      }
+
+      .pause-panel-content h2 {
+        font-size: 48px;
+        font-weight: bold;
+        color: #ffd700; /* Gold color - same as retry panel score */
+        margin-bottom: 20px;
+        font-family: Arial, sans-serif;
+        text-shadow: 2px 2px 4px rgba(139, 105, 20, 1); /* Same shadow as retry panel */
+      }
+
+      .pause-panel-content p {
+        font-size: 24px;
+        color: #8b6914; /* Dark brown - matches border */
+        margin-bottom: 30px;
+        font-family: Arial, sans-serif;
+      }
+
       /* Game Over Text */
       #gameOverText {
         position: absolute;
         top: 50%;
         left: 50%;
         transform: translate(-50%, -50%);
-        font-size: 80px;
+        font-size: clamp(24px, 8vw, 80px); /* Responsive: min 24px, max 80px, scales with viewport */
         font-weight: bold;
         color: #ff0000;
         font-family: Arial, sans-serif;
@@ -274,7 +402,7 @@
       }
 
       /* Responsive adjustments */
-      @media (max-width: 768px) {
+      @media (max-width: 1000px) {
         #scoreBox {
           top: 20px;
           left: 20px;
@@ -295,7 +423,7 @@
         #missIconsContainer {
           top: 20px; /* Aligned with score box top on mobile */
           right: 20px;
-          gap: 20px; /* Increased gap for better spacing */
+          gap: 5px; /* Increased gap for better spacing */
           align-items: center; /* Ensure vertical alignment */
         }
 
@@ -305,7 +433,52 @@
         }
 
         #gameOverText {
-          font-size: 50px;
+          font-size: clamp(24px, 6vw, 32px); /* Responsive sizing for mobile */
+          text-shadow: 
+            -1px -1px 0 #000,
+            1px -1px 0 #000,
+            -1px 1px 0 #000,
+            1px 1px 0 #000;
+        }
+
+        #pauseBtn {
+          bottom: 15px; /* Changed from top to bottom */
+          right: 15px;
+          width: 50px;
+          height: 50px;
+        }
+
+        .pause-panel-content {
+          min-width: 250px;
+          padding: 30px 40px;
+        }
+
+        .pause-icon::before,
+        .pause-icon::after {
+          width: 6px;
+          height: 20px;
+        }
+
+        .pause-icon {
+          gap: 4px;
+        }
+
+        .resume-icon {
+          border-left-width: 16px;
+          border-top-width: 10px;
+          border-bottom-width: 10px;
+        }
+
+        .pause-panel-content {
+          padding: 30px 40px;
+        }
+
+        .pause-panel-content h2 {
+          font-size: 36px;
+        }
+
+        .pause-panel-content p {
+          font-size: 18px;
         }
       }
 
@@ -324,6 +497,18 @@
       <div id="bestScoreText">BEST: 0</div>
       <div id="missIconsContainer"></div>
       <div id="gameOverText">GAME OVER</div>
+      <button id="pauseBtn" title="Pause">
+        <div class="pause-icon"></div>
+        <div class="resume-icon"></div>
+      </button>
+    </div>
+
+    <!-- Pause Panel -->
+    <div id="pausePanel">
+      <div class="pause-panel-content">
+        <h2>PAUSED</h2>
+        <p>Tap anywhere to resume</p>
+      </div>
     </div>
 
     <!-- Game Over / Retry Panel -->
@@ -411,6 +596,7 @@
       // Handle fullscreen changes to ensure gameUI is visible
       function handleFullscreenChange() {
         const gameUI = document.getElementById('gameUI');
+        const pausePanel = document.getElementById('pausePanel');
         if (!gameUI) return;
 
         // Small delay to ensure fullscreen element is ready
@@ -426,11 +612,21 @@
               fullscreenElement.appendChild(gameUI);
               console.log('GameUI moved to fullscreen element');
             }
+            // Move pause panel into fullscreen element
+            if (pausePanel && pausePanel.parentElement !== fullscreenElement) {
+              fullscreenElement.appendChild(pausePanel);
+              console.log('PausePanel moved to fullscreen element');
+            }
           } else {
             // Move gameUI back to body when exiting fullscreen
             if (gameUI.parentElement !== document.body) {
               document.body.appendChild(gameUI);
               console.log('GameUI moved back to body');
+            }
+            // Move pause panel back to body
+            if (pausePanel && pausePanel.parentElement !== document.body) {
+              document.body.appendChild(pausePanel);
+              console.log('PausePanel moved back to body');
             }
           }
         }, 10);

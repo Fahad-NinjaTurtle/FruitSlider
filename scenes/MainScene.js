@@ -94,6 +94,7 @@ export class MainScene extends Phaser.Scene {
     this.misses = 0;
     this.maxMisses = this.config.game.maxMisses;
     this.gameOver = false;
+    this.isPaused = false;
     
     // Combo system state
     this.comboCount = 0; // Current combo count
@@ -130,8 +131,8 @@ export class MainScene extends Phaser.Scene {
     }
 
     this.input.on("pointerdown", (p) => {
-      // Don't process swipes if game is over
-      if (this.gameOver) return;
+      // Don't process swipes if game is over or paused
+      if (this.gameOver || this.isPaused) return;
       
       const now = this.time.now;
       this.swipePoints = [{ x: p.x, y: p.y, time: now }];
@@ -167,7 +168,7 @@ export class MainScene extends Phaser.Scene {
     });
 
     this.input.on("pointermove", (p) => {
-      if (!this.isSwiping || this.gameOver) return;
+      if (!this.isSwiping || this.gameOver || this.isPaused) return;
 
       // Cancel the clear timer since we're moving
       if (this.trailClearTimer) {
@@ -210,8 +211,8 @@ export class MainScene extends Phaser.Scene {
     });
 
     this.input.on("pointerup", () => {
-      // Don't process if game is over (let buttons handle clicks)
-      if (this.gameOver) return;
+      // Don't process if game is over or paused (let buttons handle clicks)
+      if (this.gameOver || this.isPaused) return;
       
       // Cancel clear timer
       if (this.trailClearTimer) {
@@ -253,6 +254,9 @@ export class MainScene extends Phaser.Scene {
     
     // Make startGame method accessible globally
     window.startGame = () => this.startGame();
+    
+    // Setup pause button
+    this.setupPauseButton();
     
     // Check if this is a scene restart (retry) - auto-start game
     // Store a flag in scene data to detect restart
@@ -311,7 +315,105 @@ export class MainScene extends Phaser.Scene {
     // Start fruit spawning using spawner
     this.fruitSpawner.start();
     
+    // Show pause button
+    const pauseBtn = document.getElementById('pauseBtn');
+    if (pauseBtn) {
+      pauseBtn.style.display = 'flex';
+    }
+    
     console.log('🎮 Game started - fruits will now spawn');
+  }
+
+  // Setup pause button event listeners
+  setupPauseButton() {
+    const pauseBtn = document.getElementById('pauseBtn');
+    const pausePanel = document.getElementById('pausePanel');
+    
+    if (pauseBtn) {
+      pauseBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.togglePause();
+      });
+    }
+    
+    if (pausePanel) {
+      pausePanel.addEventListener('click', () => {
+        if (this.isPaused) {
+          this.togglePause();
+        }
+      });
+    }
+  }
+
+  // Toggle pause/resume
+  togglePause() {
+    if (this.gameOver || !this.gameStarted) return;
+    
+    this.isPaused = !this.isPaused;
+    const pauseBtn = document.getElementById('pauseBtn');
+    const pausePanel = document.getElementById('pausePanel');
+    
+    if (this.isPaused) {
+      // Pause the game
+      this.pauseGame();
+      
+      // Update UI
+      if (pauseBtn) {
+        pauseBtn.classList.add('paused');
+      }
+      if (pausePanel) {
+        pausePanel.classList.add('visible');
+      }
+    } else {
+      // Resume the game
+      this.resumeGame();
+      
+      // Update UI
+      if (pauseBtn) {
+        pauseBtn.classList.remove('paused');
+      }
+      if (pausePanel) {
+        pausePanel.classList.remove('visible');
+      }
+    }
+  }
+
+  // Pause game functionality
+  pauseGame() {
+    // Pause Phaser scene
+    this.scene.pause();
+    
+    // Stop fruit spawning
+    if (this.fruitSpawner) {
+      this.fruitSpawner.stop();
+    }
+    
+    // Pause all timers
+    this.time.paused = true;
+    
+    // Pause physics (freeze all bodies)
+    this.physics.world.pause();
+    
+    console.log('⏸️ Game paused');
+  }
+
+  // Resume game functionality
+  resumeGame() {
+    // Resume Phaser scene
+    this.scene.resume();
+    
+    // Resume fruit spawning
+    if (this.fruitSpawner && this.gameStarted && !this.gameOver) {
+      this.fruitSpawner.start();
+    }
+    
+    // Resume all timers
+    this.time.paused = false;
+    
+    // Resume physics
+    this.physics.world.resume();
+    
+    console.log('▶️ Game resumed');
   }
 
   // Update UI text (now using HTML elements)
@@ -512,6 +614,24 @@ export class MainScene extends Phaser.Scene {
     // Stop fruit spawning
     this.fruitSpawner.stop();
     
+    // Hide pause button
+    const pauseBtn = document.getElementById('pauseBtn');
+    if (pauseBtn) {
+      pauseBtn.style.display = 'none';
+    }
+    
+    // Hide pause panel if visible
+    const pausePanel = document.getElementById('pausePanel');
+    if (pausePanel) {
+      pausePanel.classList.remove('visible');
+    }
+    
+    // Resume if paused
+    if (this.isPaused) {
+      this.resumeGame();
+      this.isPaused = false;
+    }
+    
     // Hide game over text if it exists (from bomb explosion)
     if (this.gameOverTextElement) {
       this.gameOverTextElement.classList.remove('visible');
@@ -642,8 +762,8 @@ export class MainScene extends Phaser.Scene {
     // Check for fruits going off-screen
     this.checkFruitsOffScreen();
 
-    // Process swipe collisions if game is active
-    if (!this.gameOver && this.isSwiping && this.swipePoints.length > 1) {
+    // Process swipe collisions if game is active and not paused
+    if (!this.gameOver && !this.isPaused && this.isSwiping && this.swipePoints.length > 1) {
       this.checkSwipeAgainstFruits();
     }
   }
@@ -652,8 +772,8 @@ export class MainScene extends Phaser.Scene {
    * Render visual updates
    */
   render() {
-    // Draw swipe trail
-    if (!this.gameOver) {
+    // Draw swipe trail (only if not paused)
+    if (!this.gameOver && !this.isPaused) {
       this.drawSwipeTrail();
     }
   }

@@ -20,13 +20,15 @@ export class FruitSpawner {
     if (this.isActive) return;
     
     this.isActive = true;
-    const width = this.scene.cameras.main.width;
-    const height = this.scene.cameras.main.height;
 
     this.spawnTimer = this.scene.time.addEvent({
       delay: this.config.spawn.delay,
       callback: () => {
         if (this.scene.gameOver) return;
+        
+        // Get fresh dimensions each spawn to handle orientation changes
+        const width = this.scene.cameras.main.width;
+        const height = this.scene.cameras.main.height;
         
         const now = this.scene.time.now;
         const multiFruitConfig = this.config.spawn.multiFruit;
