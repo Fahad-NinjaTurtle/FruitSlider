@@ -102,6 +102,21 @@ export class GameConfig {
         gameOverTextDelay: 100,
         panelDelay: 1200,
       },
+      scorePopup: {
+        fontSize: 32,
+        duration: 1000, // How long popup is visible
+        moveDistance: 50, // How far it moves up
+        fadeDelay: 700, // When to start fading
+      },
+    };
+
+    // Rush mode configuration
+    this.rush = {
+      enabled: true,
+      minFruits: 10,
+      maxFruits: 15,
+      spawnDelay: 10000, // Trigger rush every 30 seconds1
+      spawnInterval: 80, // Delay between each fruit in rush (ms)
     };
   }
 

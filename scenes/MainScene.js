@@ -33,6 +33,9 @@ export class MainScene extends Phaser.Scene {
     const width = this.cameras.main.width;
     const height = this.cameras.main.height;
 
+    // Set camera background color to match game background
+    this.cameras.main.setBackgroundColor('#222222');
+
     // Apply LINEAR texture filtering to all textures to prevent pixelation on mobile
     // This enables smooth scaling on high-DPI displays
     const textureKeys = ["waterMelon", "apple", "peach", "pear", "bomb", "background", "trail", "cross"];
@@ -106,6 +109,20 @@ export class MainScene extends Phaser.Scene {
     this.lastSliceTime = 0; // Time of last fruit slice
     this.comboText = null; // Combo display text object
     this.comboTimer = null; // Timer to reset combo
+    
+    // Rush mode state
+    this.lastRushTime = 0; // Track last rush mode trigger
+    this.isRushActive = false; // Track if rush mode is currently active
+    
+    // Score popup pool (for performance)
+    this.scorePopups = []; // Array of reusable popup text objects
+    
+    // Rush mode state
+    this.lastRushTime = 0; // Track last rush mode trigger
+    this.isRushActive = false; // Track if rush mode is currently active
+    
+    // Score popup pool (for performance)
+    this.scorePopups = []; // Array of reusable popup text objects
     
     // Load best score from localStorage
     this.bestScore = parseInt(
@@ -305,6 +322,10 @@ export class MainScene extends Phaser.Scene {
       this.comboText.destroy();
       this.comboText = null;
     }
+    
+    // Reset rush mode
+    this.lastRushTime = this.time.now;
+    this.isRushActive = false;
     
     // Reload best score
     this.bestScore = parseInt(
@@ -643,6 +664,14 @@ export class MainScene extends Phaser.Scene {
       this.comboText = null;
     }
     
+    // Clean up score popups
+    this.scorePopups.forEach(popup => {
+      if (popup && popup.active) {
+        popup.setActive(false);
+        popup.setVisible(false);
+      }
+    });
+    
     // Update best score
     if (this.score > this.bestScore) {
       this.bestScore = this.score;
@@ -833,9 +862,135 @@ export class MainScene extends Phaser.Scene {
       if (newMultiplier !== this.difficultyMultiplier) {
         this.difficultyMultiplier = newMultiplier;
         this.lastDifficultyUpdate = now;
-        
-        // Update gravity with new difficulty
         this.updateGravity();
+      }
+    }
+    
+    // Check for rush mode trigger
+    this.checkRushMode();
+  }
+  
+  // Check and trigger rush mode
+  checkRushMode() {
+    if (!this.config.rush || !this.config.rush.enabled || this.isRushActive) return;
+    
+    const now = this.time.now;
+    const timeSinceLastRush = now - this.lastRushTime;
+    
+    // Trigger rush mode every configured interval
+    if (timeSinceLastRush >= this.config.rush.spawnDelay) {
+      this.triggerRushMode();
+      this.lastRushTime = now;
+    }
+  }
+  
+  // Trigger rush mode - spawn burst of fruits
+  triggerRushMode() {
+    if (this.gameOver || !this.gameStarted) return;
+    
+    this.isRushActive = true;
+    const width = this.cameras.main.width;
+    const height = this.cameras.main.height;
+    
+    const numFruits = Phaser.Math.Between(
+      this.config.rush.minFruits,
+      this.config.rush.maxFruits
+    );
+    
+    console.log(`🚀 RUSH MODE! Spawning ${numFruits} fruits!`);
+    
+    // Spawn fruits with small delays between them
+    for (let i = 0; i < numFruits; i++) {
+      this.time.delayedCall(i * this.config.rush.spawnInterval, () => {
+        if (!this.gameOver && this.gameStarted) {
+          const fruitType = Phaser.Math.RND.pick(
+            this.config.spawn.fruitTypes.filter(type => type !== 'bomb') // No bombs in rush
+          );
+          const randomSpawnX = Phaser.Math.Between(
+            this.config.spawn.minSpawnX,
+            width - this.config.spawn.maxSpawnXOffset
+          );
+          
+          this.fruitSpawner.spawnFruit(fruitType, randomSpawnX, width, height);
+        }
+      });
+    }
+    
+    // Mark rush as complete after all fruits are spawned
+    this.time.delayedCall(numFruits * this.config.rush.spawnInterval + 500, () => {
+      this.isRushActive = false;
+    });
+  }
+  
+  // Show animated score popup at position
+  showScorePopup(x, y, score) {
+    const popupConfig = this.config.effects.scorePopup;
+    if (!popupConfig) return;
+    
+    // Try to reuse existing popup from pool
+    let popup = this.scorePopups.find(p => !p.active);
+    
+    if (!popup) {
+      // Create new popup text
+      popup = this.add.text(x, y, `+${score}`, {
+        fontSize: `${popupConfig.fontSize}px`,
+        fontFamily: 'Arial',
+        color: '#FFD700',
+        stroke: '#000000',
+        strokeThickness: 4,
+        fontWeight: 'bold',
+      });
+      popup.setOrigin(0.5);
+      popup.setDepth(100); // Above everything
+      popup.setAlpha(1);
+      popup.active = false;
+      
+      // Add to pool
+      this.scorePopups.push(popup);
+    } else {
+      // Reuse existing popup
+      popup.setText(`+${score}`);
+      popup.setPosition(x, y);
+      popup.setAlpha(1);
+      popup.setScale(1);
+    }
+    
+    popup.active = true;
+    
+    // Animate popup: move up and fade out
+    this.tweens.add({
+      targets: popup,
+      y: y - popupConfig.moveDistance,
+      alpha: 1,
+      scale: 1.2,
+      duration: popupConfig.fadeDelay,
+      ease: 'Power2',
+    });
+    
+    // Fade out
+    this.tweens.add({
+      targets: popup,
+      alpha: 0,
+      scale: 0.8,
+      duration: popupConfig.duration - popupConfig.fadeDelay,
+      delay: popupConfig.fadeDelay,
+      ease: 'Power2',
+      onComplete: () => {
+        popup.active = false;
+      },
+    });
+  }
+  
+  // Trigger haptic feedback on mobile devices
+  triggerHapticFeedback() {
+    // Check if vibration API is available
+    if ('vibrate' in navigator) {
+      try {
+        // Short vibration for slice feedback
+        navigator.vibrate(10); // 10ms vibration
+      } catch (e) {
+        // Silently fail if vibration not supported or blocked
+        console.debug('Haptic feedback not available');
       }
     }
   }
@@ -1040,6 +1195,8 @@ export class MainScene extends Phaser.Scene {
     const timeSinceLastSlice = now - this.lastSliceTime;
     const comboConfig = this.config.combo;
     
+    let totalScore = 1; // Default score
+    
     if (comboConfig.enabled && timeSinceLastSlice <= comboConfig.timeWindow) {
       // Continue combo
       this.comboCount++;
@@ -1047,7 +1204,7 @@ export class MainScene extends Phaser.Scene {
       // Calculate bonus score (base score + combo bonus)
       const baseScore = 1;
       const comboBonus = Math.floor(baseScore * comboConfig.bonusMultiplier * this.comboCount);
-      const totalScore = baseScore + comboBonus;
+      totalScore = baseScore + comboBonus;
       
       this.score += totalScore;
       
@@ -1065,7 +1222,8 @@ export class MainScene extends Phaser.Scene {
     } else {
       // Start new combo or single slice
       this.comboCount = 1;
-      this.score++;
+      totalScore = 1;
+      this.score += totalScore;
       
       // Reset combo timer
       if (this.comboTimer) {
@@ -1085,6 +1243,12 @@ export class MainScene extends Phaser.Scene {
     const x = fruit.x;
     const y = fruit.y;
     const scale = fruit.scaleX;
+    
+    // Show score popup
+    this.showScorePopup(x, y, totalScore);
+    
+    // Haptic feedback on mobile
+    this.triggerHapticFeedback();
 
     // Calculate slice angle from swipe
     let sliceAngle = 0;
