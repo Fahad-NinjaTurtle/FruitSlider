@@ -33,10 +33,10 @@ export class GameConfig {
       difficulty: {
         enabled: true,
         baseGravity: 300, // Base gravity (will be scaled)
-        maxGravityMultiplier: 2.5, // Maximum gravity multiplier (2.5x at max difficulty)
-        maxVelocityMultiplier: 2.0, // Maximum velocity multiplier (2x at max difficulty)
-        difficultyIncreaseInterval: 10000, // Increase difficulty every 10 seconds
-        difficultyIncreaseAmount: 0.1, // Increase multiplier by 0.1 each interval
+        maxGravityMultiplier: 3.0, // Maximum gravity multiplier (3x at max difficulty) - increased from 2.5
+        maxVelocityMultiplier: 2.5, // Maximum velocity multiplier (2.5x at max difficulty) - increased from 2.0
+        difficultyIncreaseInterval: 8000, // Increase difficulty every 8 seconds (faster progression) - reduced from 10000
+        difficultyIncreaseAmount: 0.15, // Increase multiplier by 0.15 each interval (more noticeable) - increased from 0.1
       },
 
       // Angular velocity

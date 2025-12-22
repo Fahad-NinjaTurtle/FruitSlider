@@ -277,8 +277,10 @@ export class MainScene extends Phaser.Scene {
     // Make startGame method accessible globally
     window.startGame = () => this.startGame();
     
-    // Setup pause button
-    this.setupPauseButton();
+    // Setup pause button (will clean up old listeners if called again)
+    this.pauseBtnHandler = null;
+    this.pausePanelHandler = null;
+    // this.setupPauseButton();
     
     // Check if this is a scene restart (retry) - auto-start game
     // Store a flag in scene data to detect restart
@@ -302,9 +304,13 @@ export class MainScene extends Phaser.Scene {
     
     this.gameStarted = true;
     this.gameOver = false;
+    this.isPaused = false; // Reset pause state
     this.score = 0;
     this.misses = 0;
     
+    document.getElementById('pausePanel')?.classList.remove('visible');
+    document.getElementById('pauseBtn')?.classList.remove('paused');
+
     // Hide game over panel if visible
     const gameOverPanel = document.getElementById('gameOverPanel');
     if (gameOverPanel) {
@@ -349,10 +355,30 @@ export class MainScene extends Phaser.Scene {
     // Start fruit spawning using spawner
     this.fruitSpawner.start();
     
-    // Show pause button
+    // Show pause button and reset its state
     const pauseBtn = document.getElementById('pauseBtn');
     if (pauseBtn) {
       pauseBtn.style.display = 'flex';
+      pauseBtn.classList.remove('paused'); // Reset pause button state
+    }
+    
+    // Ensure pause panel is hidden
+    const pausePanel = document.getElementById('pausePanel');
+    if (pausePanel) {
+      pausePanel.classList.remove('visible');
+    }
+    
+    // Ensure physics and timers are not paused
+    // Resume physics world (it will handle if already resumed)
+    try {
+      this.physics.world.resume();
+    } catch (e) {
+      // Physics world might already be active, ignore error
+    }
+    
+    // Ensure timers are not paused
+    if (this.time.paused) {
+      this.time.paused = false;
     }
     
     console.log('🎮 Game started - fruits will now spawn');
@@ -388,19 +414,33 @@ export class MainScene extends Phaser.Scene {
     const pauseBtn = document.getElementById('pauseBtn');
     const pausePanel = document.getElementById('pausePanel');
     
-    if (pauseBtn) {
-      pauseBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
+    // Remove old event listeners if they exist
+    if (pauseBtn && this.pauseBtnHandler) {
+      pauseBtn.removeEventListener('click', this.pauseBtnHandler);
+    }
+    if (pausePanel && this.pausePanelHandler) {
+      pausePanel.removeEventListener('click', this.pausePanelHandler);
+    }
+    
+    // Create new event handlers with proper binding
+    this.pauseBtnHandler = (e) => {
+      e.stopPropagation();
+      this.togglePause();
+    };
+    
+    this.pausePanelHandler = () => {
+      if (this.isPaused) {
         this.togglePause();
-      });
+      }
+    };
+    
+    // Add new event listeners
+    if (pauseBtn) {
+      pauseBtn.addEventListener('click', this.pauseBtnHandler);
     }
     
     if (pausePanel) {
-      pausePanel.addEventListener('click', () => {
-        if (this.isPaused) {
-          this.togglePause();
-        }
-      });
+      pausePanel.addEventListener('click', this.pausePanelHandler);
     }
   }
 
@@ -439,9 +479,7 @@ export class MainScene extends Phaser.Scene {
 
   // Pause game functionality
   pauseGame() {
-    // Pause Phaser scene
-    this.scene.pause();
-    
+    // Don't use scene.pause() as it can cause conflicts - just pause timers and physics
     // Stop fruit spawning
     if (this.fruitSpawner) {
       this.fruitSpawner.stop();
@@ -458,9 +496,7 @@ export class MainScene extends Phaser.Scene {
 
   // Resume game functionality
   resumeGame() {
-    // Resume Phaser scene
-    this.scene.resume();
-    
+    // Don't use scene.resume() - just resume timers and physics
     // Resume fruit spawning
     if (this.fruitSpawner && this.gameStarted && !this.gameOver) {
       this.fruitSpawner.start();
@@ -863,6 +899,7 @@ export class MainScene extends Phaser.Scene {
         this.difficultyMultiplier = newMultiplier;
         this.lastDifficultyUpdate = now;
         this.updateGravity();
+        console.log(`📈 Difficulty increased to ${this.difficultyMultiplier.toFixed(2)}x`);
       }
     }
     
@@ -1801,3 +1838,27 @@ export class MainScene extends Phaser.Scene {
     this.fruitSpawner.spawnFruit(gameObjectName, spawnX, width, height);
   }
 }
+
+
+let pauseBound = false;
+
+function bindPauseUI() {
+  if (pauseBound) return;
+  pauseBound = true;
+
+  const pauseBtn = document.getElementById('pauseBtn');
+  const pausePanel = document.getElementById('pausePanel');
+
+  pauseBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const scene = window.gameInstance.scene.keys.MainScene;
+    if (scene) scene.togglePause();
+  });
+
+  pausePanel.addEventListener('click', () => {
+    const scene = window.gameInstance.scene.keys.MainScene;
+    if (scene && scene.isPaused) scene.togglePause();
+  });
+}
+
+bindPauseUI();
