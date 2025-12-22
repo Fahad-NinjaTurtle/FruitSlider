@@ -25,8 +25,8 @@ export class GameConfig {
     // Fruit physics configuration
     this.fruit = {
       // Velocity ranges (base values, will be scaled responsively)
-      minUpwardVelocity: -450, // Reduced from -500 to prevent going above screen
-      maxUpwardVelocity: -700, // Reduced from -850 to prevent going above screen
+      minUpwardVelocity: -300, // Further reduced to prevent going above screen
+      maxUpwardVelocity: -450, // Further reduced to prevent going above screen
       horizontalSpeedMultiplier: 0.4, // Percentage of upward velocity
 
       // Angular velocity
@@ -35,10 +35,10 @@ export class GameConfig {
 
       // Scale configuration
       baseHeight: 1080, // Reference height for scaling
-      mobileBaseScale: 0.28, // Reduced from 0.35 - smaller fruits on mobile
-      desktopBaseScale: 0.3,
-      minScale: 0.2, // Reduced from 0.25
-      maxScale: 0.35, // Reduced from 0.45
+      mobileBaseScale: 0.5, // Good size for mobile
+      desktopBaseScale: 0.4, // Reduced for desktop - fruits were too big
+      minScale: 0.3, // Minimum scale
+      maxScale: 0.5, // Reduced max scale - prevents fruits from being too large on big screens
 
       // Gravity for sliced halves
       slicedGravity: 1200,

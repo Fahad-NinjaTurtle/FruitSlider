@@ -141,9 +141,9 @@ export class FruitSpawner {
       navigator.userAgent
     );
     
-    // Slight boost for mobile (reduced from 1.3 to prevent going above screen)
-    // Mobile screens are smaller, so we need slightly more velocity
-    const mobileVelocityMultiplier = isMobile ? 1.1 : 1.0;
+    // Reduced mobile multiplier to prevent fruits going above screen
+    // Mobile screens are smaller, but we need to be careful with velocity
+    const mobileVelocityMultiplier = isMobile ? 0.9 : 1.0; // Reduced from 1.1 to 0.9
     const adjustedVelocityScale = velocityScale * mobileVelocityMultiplier;
 
     // Upward velocity

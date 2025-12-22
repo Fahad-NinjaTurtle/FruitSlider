@@ -107,61 +107,25 @@ export class MainScene extends Phaser.Scene {
       10
     );
 
-    // UI Elements - Style matching the image
-    // Calculate responsive positions based on screen size
-    const uiScale = Math.min(
-      width / this.config.ui.baseWidth, 
-      height / this.config.ui.baseHeight
-    );
+    // UI Elements are now in HTML - get references to HTML elements
+    this.scoreTextElement = document.getElementById('scoreText');
+    this.bestScoreTextElement = document.getElementById('bestScoreText');
+    this.missIconsContainer = document.getElementById('missIconsContainer');
+    this.gameOverTextElement = document.getElementById('gameOverText');
     
-    // Top-left UI group
-    const topLeftX = 40;
-    const topLeftY = 40;
-    
-    // Yellow score box - no watermelon icon
-    const scoreBoxWidth = this.config.ui.scoreBoxWidth;
-    const scoreBoxHeight = this.config.ui.scoreBoxHeight;
-    const scoreBoxX = topLeftX + 50; // Positioned at left edge
-    const scoreBoxY = topLeftY;
-    
-    this.scoreBox = this.add.graphics();
-    this.scoreBox.fillStyle(0xffd700, 1); // Bright yellow
-    this.scoreBox.fillRoundedRect(scoreBoxX - scoreBoxWidth/2, scoreBoxY - scoreBoxHeight/2, scoreBoxWidth, scoreBoxHeight, 8);
-    this.scoreBox.lineStyle(2, 0x000000, 1); // Black border
-    this.scoreBox.strokeRoundedRect(scoreBoxX - scoreBoxWidth/2, scoreBoxY - scoreBoxHeight/2, scoreBoxWidth, scoreBoxHeight, 8);
-    this.scoreBox.setDepth(100);
-    
-    // Score text (inside yellow box) - larger and bold
-    this.scoreText = this.add.text(scoreBoxX, scoreBoxY, '0', {
-      fontSize: '32px',
-      fill: '#000000',
-      fontFamily: 'Arial',
-      fontStyle: 'bold'
-    }).setOrigin(0.5).setDepth(101);
-    
-    // BEST score text (below yellow box, aligned with left edge of box)
-    this.bestScoreText = this.add.text(scoreBoxX - scoreBoxWidth/2, scoreBoxY + scoreBoxHeight/2 + 8, `BEST: ${this.bestScore}`, {
-      fontSize: '20px',
-      fill: '#ff8c00',
-      fontFamily: 'Arial',
-      fontStyle: 'bold'
-    }).setOrigin(0, 0.5).setDepth(101);
-    
-    // Miss counter - Cross icons from sprite (top right)
+    // Create HTML miss icons (clear existing ones first in case of scene restart)
+    if (this.missIconsContainer) {
+      this.missIconsContainer.innerHTML = '';
+    }
     this.missIcons = [];
-    const missIconSpacing = this.config.ui.missIconSpacing;
-    const missIconStartX = width - 200; // Adjusted position for larger icons
-    const missIconY = topLeftY;
-    const missIconSize = this.config.ui.missIconSize;
-    
     for (let i = 0; i < this.maxMisses; i++) {
-      const crossIcon = this.add.image(
-        missIconStartX + i * missIconSpacing, 
-        missIconY, 
-        'cross'
-      );
-      crossIcon.setDisplaySize(missIconSize, missIconSize);
-      crossIcon.setDepth(100);
+      const crossIcon = document.createElement('img');
+      crossIcon.src = 'sprites/cross.png';
+      crossIcon.className = 'miss-icon';
+      crossIcon.alt = 'miss';
+      if (this.missIconsContainer) {
+        this.missIconsContainer.appendChild(crossIcon);
+      }
       this.missIcons.push(crossIcon);
     }
 
@@ -350,13 +314,13 @@ export class MainScene extends Phaser.Scene {
     console.log('🎮 Game started - fruits will now spawn');
   }
 
-  // Update UI text
+  // Update UI text (now using HTML elements)
   updateUI() {
-    if (this.scoreText) {
-      this.scoreText.setText(`${this.score}`);
+    if (this.scoreTextElement) {
+      this.scoreTextElement.textContent = `${this.score}`;
     }
-    if (this.bestScoreText) {
-      this.bestScoreText.setText(`BEST: ${this.bestScore}`);
+    if (this.bestScoreTextElement) {
+      this.bestScoreTextElement.textContent = `BEST: ${this.bestScore}`;
     }
     
     // Update miss icons (show remaining lives - hide icons from left when misses occur)
@@ -368,7 +332,11 @@ export class MainScene extends Phaser.Scene {
           // If misses = 1, show last 2 (i >= 1) - hide leftmost
           // If misses = 2, show last 1 (i >= 2) - hide leftmost 2
           // If misses = 3, show none (i >= 3) - hide all
-          this.missIcons[i].setVisible(i >= this.misses);
+          if (i >= this.misses) {
+            this.missIcons[i].classList.remove('hidden');
+          } else {
+            this.missIcons[i].classList.add('hidden');
+          }
         }
       }
     }
@@ -478,37 +446,12 @@ export class MainScene extends Phaser.Scene {
     }
   }
 
-  // Show game over text (called after bomb explosion)
+  // Show game over text (now using HTML element)
   showGameOverText() {
-    const width = this.cameras.main.width;
-    const height = this.cameras.main.height;
-    
-    // GAME OVER text (large, red, bold)
-    const gameOverText = this.add.text(
-      width / 2,
-      height / 2,
-      'GAME OVER',
-      {
-        fontSize: '80px',
-        fill: '#ff0000',
-        stroke: '#000000',
-        strokeThickness: 8,
-        fontFamily: 'Arial',
-        fontStyle: 'bold'
-      }
-    ).setOrigin(0.5).setDepth(251);
-    
-    // Fade in animation
-    gameOverText.setAlpha(0);
-    this.tweens.add({
-      targets: gameOverText,
-      alpha: 1,
-      duration: 300,
-      ease: 'Power2'
-    });
-    
-    // Store reference for cleanup
-    this.gameOverTextObj = gameOverText;
+    if (this.gameOverTextElement) {
+      // Fade in animation using CSS
+      this.gameOverTextElement.classList.add('visible');
+    }
   }
 
   // End game function with parchment-style panel
@@ -569,10 +512,9 @@ export class MainScene extends Phaser.Scene {
     // Stop fruit spawning
     this.fruitSpawner.stop();
     
-    // Remove game over text if it exists (from bomb explosion) - do it immediately
-    if (this.gameOverTextObj) {
-      this.gameOverTextObj.destroy();
-      this.gameOverTextObj = null;
+    // Hide game over text if it exists (from bomb explosion)
+    if (this.gameOverTextElement) {
+      this.gameOverTextElement.classList.remove('visible');
     }
     
     console.log('📋 Showing HTML game over panel...');
@@ -728,8 +670,29 @@ export class MainScene extends Phaser.Scene {
    * Check for fruits that have gone off-screen
    */
   checkFruitsOffScreen() {
+    const screenHeight = this.cameras.main.height;
+    const topBoundary = 0; // Top of screen
+    
     this.fruits.getChildren().forEach((fruit) => {
-      if (fruit && fruit.active && fruit.y > this.cameras.main.height) {
+      if (!fruit || !fruit.active) return;
+      
+      // Calculate actual fruit half height based on display size
+      const fruitHalfHeight = fruit.displayHeight ? fruit.displayHeight / 2 : 50;
+      
+      // Check if fruit went above screen - use actual fruit size
+      if (fruit.y < topBoundary - fruitHalfHeight) {
+        // Stop upward velocity immediately and reverse it slightly to pull down
+        if (fruit.body && fruit.body.velocity) {
+          fruit.body.setVelocityY(Math.max(0, fruit.body.velocity.y)); // Stop upward movement
+          // If fruit is way above screen, add downward velocity
+          if (fruit.y < -fruitHalfHeight * 2) {
+            fruit.body.setVelocityY(50); // Small downward push
+          }
+        }
+      }
+      
+      // Check if fruit went below screen
+      if (fruit.y > screenHeight + fruitHalfHeight) {
         console.log("fruit destroyed ", fruit.texture.key);
         
         // Check if it's a bomb (bombs don't count as misses)
