@@ -96,6 +96,11 @@ export class MainScene extends Phaser.Scene {
     this.gameOver = false;
     this.isPaused = false;
     
+    // Progressive difficulty system
+    this.difficultyMultiplier = 1.0; // Starts at 1.0x
+    this.gameStartTime = 0; // Track when game started
+    this.lastDifficultyUpdate = 0; // Track last difficulty increase
+    
     // Combo system state
     this.comboCount = 0; // Current combo count
     this.lastSliceTime = 0; // Time of last fruit slice
@@ -312,6 +317,14 @@ export class MainScene extends Phaser.Scene {
     // Play game start sound
     this.sound.play("sfxGameStart", { volume: 0.8 });
     
+    // Initialize progressive difficulty system
+    this.difficultyMultiplier = 1.0;
+    this.gameStartTime = this.time.now;
+    this.lastDifficultyUpdate = this.time.now;
+    
+    // Set initial gravity (will be updated with difficulty)
+    this.updateGravity();
+    
     // Start fruit spawning using spawner
     this.fruitSpawner.start();
     
@@ -322,6 +335,31 @@ export class MainScene extends Phaser.Scene {
     }
     
     console.log('🎮 Game started - fruits will now spawn');
+  }
+
+  // Update gravity based on difficulty multiplier
+  updateGravity() {
+    const difficultyConfig = this.config.fruit.difficulty;
+    if (!difficultyConfig.enabled) return;
+    
+    const baseGravity = difficultyConfig.baseGravity;
+    const height = this.cameras.main.height;
+    const baseHeight = 1080;
+    const gravityScale = height / baseHeight;
+    
+    // Gravity multiplier can go higher than velocity multiplier for more challenge
+    const gravityMultiplier = Math.min(
+      this.difficultyMultiplier * 1.2, // Gravity increases 20% faster than velocity
+      difficultyConfig.maxGravityMultiplier
+    );
+    
+    // Calculate gravity with difficulty multiplier
+    const currentGravity = baseGravity * gravityScale * gravityMultiplier;
+    
+    // Update physics world gravity
+    this.physics.world.gravity.y = currentGravity;
+    
+    console.log(`📈 Difficulty: ${this.difficultyMultiplier.toFixed(2)}x | Gravity: ${currentGravity.toFixed(0)} (${gravityMultiplier.toFixed(2)}x)`);
   }
 
   // Setup pause button event listeners
@@ -410,8 +448,11 @@ export class MainScene extends Phaser.Scene {
     // Resume all timers
     this.time.paused = false;
     
-    // Resume physics
+    // Resume physics (gravity will be updated automatically)
     this.physics.world.resume();
+    
+    // Update gravity in case it changed while paused
+    this.updateGravity();
     
     console.log('▶️ Game resumed');
   }
@@ -759,12 +800,43 @@ export class MainScene extends Phaser.Scene {
       this.updateBackgroundSize();
     }
 
+    // Update progressive difficulty (only if game is active and not paused)
+    if (this.gameStarted && !this.gameOver && !this.isPaused) {
+      this.updateProgressiveDifficulty();
+    }
+
     // Check for fruits going off-screen
     this.checkFruitsOffScreen();
 
     // Process swipe collisions if game is active and not paused
     if (!this.gameOver && !this.isPaused && this.isSwiping && this.swipePoints.length > 1) {
       this.checkSwipeAgainstFruits();
+    }
+  }
+
+  // Update progressive difficulty over time
+  updateProgressiveDifficulty() {
+    const difficultyConfig = this.config.fruit.difficulty;
+    if (!difficultyConfig.enabled) return;
+    
+    const now = this.time.now;
+    const timeSinceLastUpdate = now - this.lastDifficultyUpdate;
+    
+    // Check if it's time to increase difficulty
+    if (timeSinceLastUpdate >= difficultyConfig.difficultyIncreaseInterval) {
+      // Calculate new multiplier (capped at max)
+      const newMultiplier = Math.min(
+        this.difficultyMultiplier + difficultyConfig.difficultyIncreaseAmount,
+        difficultyConfig.maxVelocityMultiplier // Use velocity multiplier as max (gravity can go higher)
+      );
+      
+      if (newMultiplier !== this.difficultyMultiplier) {
+        this.difficultyMultiplier = newMultiplier;
+        this.lastDifficultyUpdate = now;
+        
+        // Update gravity with new difficulty
+        this.updateGravity();
+      }
     }
   }
 

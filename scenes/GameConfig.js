@@ -25,9 +25,19 @@ export class GameConfig {
     // Fruit physics configuration
     this.fruit = {
       // Velocity ranges (base values, will be scaled responsively)
-      minUpwardVelocity: -300, // Further reduced to prevent going above screen
-      maxUpwardVelocity: -450, // Further reduced to prevent going above screen
+      minUpwardVelocity: -400, // Increased for mobile to reach half screen
+      maxUpwardVelocity: -600, // Increased for mobile to reach half screen
       horizontalSpeedMultiplier: 0.4, // Percentage of upward velocity
+      
+      // Progressive difficulty settings
+      difficulty: {
+        enabled: true,
+        baseGravity: 300, // Base gravity (will be scaled)
+        maxGravityMultiplier: 2.5, // Maximum gravity multiplier (2.5x at max difficulty)
+        maxVelocityMultiplier: 2.0, // Maximum velocity multiplier (2x at max difficulty)
+        difficultyIncreaseInterval: 10000, // Increase difficulty every 10 seconds
+        difficultyIncreaseAmount: 0.1, // Increase multiplier by 0.1 each interval
+      },
 
       // Angular velocity
       minAngularVelocity: -200,

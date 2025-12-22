@@ -143,12 +143,16 @@ export class FruitSpawner {
       navigator.userAgent
     );
     
-    // Reduced mobile multiplier to prevent fruits going above screen
-    // Mobile screens are smaller, but we need to be careful with velocity
-    const mobileVelocityMultiplier = isMobile ? 0.9 : 1.0; // Reduced from 1.1 to 0.9
-    const adjustedVelocityScale = velocityScale * mobileVelocityMultiplier;
+    // Mobile multiplier - increased to ensure fruits reach at least half screen
+    // Mobile screens are smaller, so we need more velocity to reach half screen
+    const mobileVelocityMultiplier = isMobile ? 1.2 : 1.0; // Increased from 0.9 to 1.2
+    
+    // Get difficulty multiplier from scene (progressive difficulty)
+    const difficultyMultiplier = this.scene.difficultyMultiplier || 1.0;
+    
+    const adjustedVelocityScale = velocityScale * mobileVelocityMultiplier * difficultyMultiplier;
 
-    // Upward velocity
+    // Upward velocity (with difficulty multiplier applied)
     const minUpward = this.config.fruit.minUpwardVelocity * adjustedVelocityScale;
     const maxUpward = this.config.fruit.maxUpwardVelocity * adjustedVelocityScale;
     const upwardVelocity = Phaser.Math.Between(minUpward, maxUpward);
@@ -162,9 +166,9 @@ export class FruitSpawner {
       ? horizontalSpeed 
       : -horizontalSpeed;
 
-    // Angular velocity
-    const minAngular = this.config.fruit.minAngularVelocity * velocityScale;
-    const maxAngular = this.config.fruit.maxAngularVelocity * velocityScale;
+    // Angular velocity (with difficulty multiplier)
+    const minAngular = this.config.fruit.minAngularVelocity * velocityScale * difficultyMultiplier;
+    const maxAngular = this.config.fruit.maxAngularVelocity * velocityScale * difficultyMultiplier;
     const angularVelocity = Phaser.Math.Between(minAngular, maxAngular);
 
     return {
